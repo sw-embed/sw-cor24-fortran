@@ -31,7 +31,7 @@ scripts/        Build scripts (placeholder)
 | Repository | Description |
 |---|---|
 | [sw-cor24-emulator](https://github.com/sw-embed/sw-cor24-emulator) | COR24 emulator + ISA |
-| [sw-cor24-assembler](https://github.com/sw-embed/sw-cor24-assembler) | COR24 assembler |
+| [sw-cor24-x-assembler](https://github.com/sw-embed/sw-cor24-x-assembler) | COR24 assembler |
 | [sw-cor24-project](https://github.com/sw-embed/sw-cor24-project) | Ecosystem hub |
 
 ## License
