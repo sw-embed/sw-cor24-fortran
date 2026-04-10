@@ -1,0 +1,1 @@
+Blocked: SNOBOL4 missing SIZE/SUBSTR/CHAR -- issue sw-embed/sw-cor24-snobol4#1

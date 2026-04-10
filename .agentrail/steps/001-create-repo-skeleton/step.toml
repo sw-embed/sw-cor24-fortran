@@ -1,0 +1,9 @@
+number = 1
+slug = "create-repo-skeleton"
+status = "completed"
+description = "Create the repository skeleton for the FTI-0 compiler project. This includes:..."
+role = "production"
+context_files = []
+created_at = "2026-04-09T18:58:02"
+completed_at = "2026-04-09T19:03:18"
+task_type = "scaffold"

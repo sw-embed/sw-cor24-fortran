@@ -1,0 +1,3378 @@
+
+
+
+
+There is historical precedent for implementing Fortran in SNOBOL4.  I'd like to try that (on an integer subset at first).  What does this entail?
+
+
+Thought
+
+Thought
+
+Thought
+You want to know what it would take to implement a FORTRAN compiler in SNOBOL4, starting with an integer-only subset.
+
+At a high level, this is a good fit for SNOBOL4 because the hard part of an early compiler is often text handling, tokenization, parsing, symbol management, and source-to-source transformation, not floating-point math. SNOBOL4 was built for symbolic processing, and it has real historical pedigree here: SNOBOL4 was itself used in compiler-bootstrapping work, and its ecosystem emphasized portability and implementation techniques for language processors. 
+
+What this project actually entails
+You are not really “implementing FORTRAN arithmetic in SNOBOL4.”
+You are building these layers:
+
+Front end
+
+read fixed-form FORTRAN source
+
+normalize continuation lines, columns, comments, labels
+
+tokenize
+
+parse statements and expressions
+
+build an internal representation
+
+Semantic layer
+
+symbol table
+
+implicit typing rules or your simplified replacement
+
+array bounds and dimensions
+
+statement labels and control-flow targets
+
+compile-time checks
+
+Back end
+
+emit code for some target:
+
+an interpreter IR
+
+your COR24 p-code
+
+your PL/SW
+
+C
+
+or even SNOBOL4 itself for bootstrapping experiments
+
+Runtime
+
+integer arithmetic
+
+arrays
+
+I/O model
+
+formatted output later
+
+CALL/RETURN later
+
+That decomposition matters because SNOBOL4 is strongest in the front end and source transformation stages. Its pattern facilities and string operations make it especially suitable for lexical cleanup, statement recognition, and grammar-like processing. SNOBOL4 has long been described as especially suited to text, symbolic expressions, and even grammar-like parsing work. 
+
+Why an integer subset is the right first target
+That is the right starting point.
+
+A first subset avoids the parts of FORTRAN that explode complexity:
+
+floating-point semantics
+
+FORMAT
+
+EQUIVALENCE
+
+COMMON
+
+computed I/O behavior
+
+weird Hollerith edge cases
+
+optimizer expectations
+
+A realistic first compiler could support:
+
+PROGRAM
+
+INTEGER
+
+DIMENSION
+
+assignment
+
+IF arithmetic or logical subset
+
+GOTO
+
+DO
+
+CONTINUE
+
+STOP
+
+END
+
+READ / PRINT in a greatly simplified form
+
+integer expressions with + - * /
+
+one-dimensional arrays first
+
+That gets you something recognizably FORTRAN-like without drowning in full FORTRAN IV/66/77 semantics.
+
+Recommended architecture
+For your situation, I would not compile directly to machine code first.
+
+Best staged architecture
+Phase 1 target
+
+compile FORTRAN subset into a simple internal instruction stream or three-address IR
+
+Phase 2 target
+
+lower that IR into:
+
+your COR24 p-code VM, or
+
+PL/SW, or
+
+a simple interpreter
+
+This reduces risk because you can validate the front end separately from code generation.
+
+Suggested pipeline
+FORTRAN source
+  -> line normalizer
+  -> statement splitter
+  -> tokenizer
+  -> parser
+  -> AST / statement records
+  -> semantic pass
+  -> CFG / label resolution
+  -> simple IR
+  -> backend emitter
+What SNOBOL4 is especially good at here
+SNOBOL4 helps most with:
+
+1. Fixed-form source normalization
+Classic FORTRAN source is messy:
+
+label field
+
+continuation column
+
+comment conventions
+
+statement field boundaries
+
+SNOBOL4 can preprocess these very naturally.
+
+2. Statement classification
+You can quickly distinguish:
+
+assignment
+
+IF (...) GOTO ...
+
+DO 100 I = 1, 10
+
+DIMENSION A(10)
+
+INTEGER I,J,K
+
+3. Pattern-driven parsing
+You do not need a full parser generator at first.
+You can parse a restricted grammar with layered recognizers.
+
+4. Symbol table construction
+SNOBOL4 tables and strings are adequate for:
+
+identifiers
+
+types
+
+dimensions
+
+labels
+
+temporary mappings
+
+5. Source-to-source transforms
+If your first backend is PL/SW or C, SNOBOL4 is quite comfortable generating text output.
+
+What SNOBOL4 is weaker at
+This is where you need to be disciplined.
+
+Risks / costs
+Performance
+Large compilers in SNOBOL4 are possible, but they are not the fastest route for heavy numeric analysis. Historically, the classic macro/SIL SNOBOL4 implementation prioritized portability over efficiency, and later systems like SPITBOL/SITBOL were created partly to improve performance. 
+
+Structured control
+Plain SNOBOL4 is not the nicest language for large-scale structured compiler code unless you impose your own conventions.
+
+Expression parsing complexity
+Pattern matching helps, but operator precedence, parentheses, unary minus, array indexing, and function calls still require a deliberate parser design.
+
+Semantic corner cases
+FORTRAN semantics get weird fast:
+
+implicit typing
+
+statement functions
+
+arithmetic IF
+
+DO loop edge cases
+
+array subscripts
+
+integer division semantics
+
+line-label control flow
+
+Scope the first compiler narrowly
+Here is the subset I would actually build first.
+
+Phase 0: choose the dialect
+Pick one:
+
+FORTRAN I-like educational subset
+
+FORTRAN IV subset
+
+FORTRAN 66-ish subset
+
+Do not say “FORTRAN” generically in the implementation.
+Define a named subset.
+
+For example:
+
+FTI-0
+A teaching subset with:
+
+integer scalars
+
+integer arrays
+
+fixed-form input
+
+assignment
+
+IF
+
+GOTO
+
+counted DO
+
+PRINT
+
+READ
+
+STOP
+
+END
+
+Phase 1: front-end only
+Goal:
+
+read source
+
+produce normalized listing + parsed statement dump
+
+Deliverables:
+
+line normalizer
+
+label extraction
+
+comment skipping
+
+tokenizer
+
+statement classifier
+
+Output example:
+
+[stmt 12]
+label=100
+kind=DO
+var=I
+start=1
+limit=N
+step=1
+body_target=100
+Do this before code generation.
+
+Phase 2: expressions
+Implement:
+
+integer literals
+
+variable references
+
+parenthesized expressions
+
+binary + - * /
+
+unary minus
+
+Use either:
+
+Pratt parser
+
+precedence climbing
+
+shunting-yard to postfix
+
+For SNOBOL4, shunting-yard or precedence climbing is probably simpler than trying to do everything in one giant pattern.
+
+Phase 3: semantic analysis
+Track:
+
+declared integer vars
+
+undeclared vars
+
+arrays and dimensions
+
+labels defined
+
+labels referenced
+
+loop metadata
+
+Decide now whether to support classic implicit typing.
+For a first compiler, I would disable implicit typing unless explicitly enabled. That is less historical, but much saner.
+
+Phase 4: IR generation
+Generate a tiny IR such as:
+
+LOAD_CONST 1
+STORE I
+LABEL L100
+LOAD I
+LOAD N
+CMP_LE
+JMP_FALSE L200
+...
+JMP L100
+LABEL L200
+STOP
+Then either:
+
+interpret this directly, or
+
+lower it to your real target
+
+Phase 5: backend
+Best first backend choices:
+
+Option A: emit C
+Pros
+
+easiest to debug
+
+lets you validate semantics quickly
+
+portable
+
+Cons
+
+less historically pure
+
+mapping FORTRAN control flow to C can get ugly
+
+Option B: emit PL/SW
+Pros
+
+fits your ecosystem
+
+good dogfooding
+
+easier later path to COR24
+
+Cons
+
+now two experimental systems interact
+
+Option C: emit COR24 p-code
+Pros
+
+clean architecture
+
+portable across your emulator
+
+aligns with your VM plans
+
+Cons
+
+more work up front than C
+
+For you, COR24 p-code is probably the most strategic long-term target, but C or a tiny IR interpreter is the fastest path to first success.
+
+Minimal feature plan
+Here is the order I would implement it.
+
+Milestone 1
+PROGRAM
+
+INTEGER
+
+simple assignment
+
+PRINT
+
+STOP
+
+END
+
+Example:
+
+      PROGRAM HELLO
+      INTEGER I
+      I = 42
+      PRINT *, I
+      STOP
+      END
+Milestone 2
+expressions
+
+multiple variables
+
+parentheses
+
+Milestone 3
+labels
+
+GOTO
+
+relational IF
+
+Milestone 4
+counted DO
+
+CONTINUE
+
+Milestone 5
+one-dimensional arrays
+
+subscript expressions
+
+Milestone 6
+READ
+
+subroutines / CALL
+
+integer functions
+
+After that, decide whether the project is still “subset FORTRAN” or becoming “FORTRAN-like language hosted by SNOBOL4.”
+
+Internal data structures to define early
+Even in SNOBOL4, define these explicitly.
+
+Source line record
+raw text
+
+label field
+
+continuation marker
+
+normalized statement text
+
+source line number
+
+Token record
+kind
+
+text
+
+source position
+
+Symbol entry
+name
+
+class: scalar / array / label / function
+
+type: integer
+
+dimension info
+
+storage slot
+
+Statement node
+kind
+
+label
+
+operands
+
+child expressions
+
+target labels
+
+IR instruction
+opcode
+
+operands
+
+temp references
+
+source line reference
+
+This discipline is what keeps the SNOBOL4 codebase from turning into a pile of ad hoc pattern actions.
+
+Parsing strategy
+For a first system, I would use two levels:
+
+Level 1: statement recognizers
+Pattern-driven dispatch:
+
+declaration
+
+assignment
+
+goto
+
+do
+
+if
+
+print
+
+read
+
+stop
+
+end
+
+Level 2: expression parser
+Separate function, not embedded in statement patterns.
+
+That split is important.
+Trying to do full expression parsing directly inside statement pattern matches will become brittle.
+
+Nonfunctional requirements
+You asked what this entails, and these are as important as the language features.
+
+Testability
+You need:
+
+golden tests for normalized source
+
+token stream tests
+
+AST dump tests
+
+IR dump tests
+
+run-output tests
+
+Error reporting
+At minimum:
+
+source line number
+
+original line text
+
+short compiler phase tag
+
+clear error class
+
+Determinism
+Compiler output should be stable for the same source.
+This matters a lot once you begin emitting PL/SW or p-code.
+
+Incremental visibility
+Have debug modes:
+
+-dump-lines
+
+-dump-tokens
+
+-dump-ast
+
+-dump-symbols
+
+-dump-ir
+
+Without that, debugging a SNOBOL4 compiler gets painful.
+
+Historical precedent
+There is real precedent for using SNOBOL4 in compiler and implementation work.
+
+SNOBOL4’s history is tightly connected to portability and implementation technique; Bell Labs’ macro/SIL implementation became an early notable example of a portable language processor. 
+
+SNOBOL4 has been explicitly discussed as a language for bootstrapping a compiler. 
+
+Its pattern system has also been noted as applicable to grammar-like processing and even direct use in compilation processes. 
+
+So the idea is not eccentric at all. It is historically grounded. The unusual part is choosing FORTRAN rather than a more text-heavy source language.
+
+Biggest design choice: exact FORTRAN vs practical subset
+You have two legitimate paths.
+
+Path A: historical faithfulness
+Model a real FORTRAN subset closely:
+
+fixed columns
+
+implicit typing
+
+statement labels
+
+arithmetic IF
+
+old-style DO rules
+
+Benefit: historically authentic
+Risk: lots of weirdness early
+
+Path B: “Fortran-in-SNOBOL4” teaching subset
+Keep the surface syntax but rationalize semantics:
+
+explicit integer declarations
+
+simpler IF
+
+fewer edge cases
+
+modernized internal rules
+
+Benefit: much faster progress
+Risk: less authentic
+
+For a first working compiler, I strongly recommend Path B.
+
+A practical first deliverable
+Your first success criterion should be:
+
+Compile a tiny fixed-form FORTRAN integer program into a textual IR and run it under a small interpreter.
+
+That proves:
+
+source normalization
+
+parsing
+
+symbol handling
+
+control flow
+
+code generation
+
+runtime arithmetic
+
+Once that works, retargeting becomes much easier.
+
+Recommended implementation plan
+Stage 1
+Build a FORTRAN fixed-form normalizer in SNOBOL4.
+
+Stage 2
+Build a statement classifier.
+
+Stage 3
+Build an expression parser.
+
+Stage 4
+Build a symbol table + label resolver.
+
+Stage 5
+Emit simple IR.
+
+Stage 6
+Build either:
+
+IR interpreter in SNOBOL4, or
+
+emitter to PL/SW / COR24 p-code
+
+Stage 7
+Add arrays and loops.
+
+My recommendation for you specifically
+Given your broader toolchain interests, the strongest architecture is:
+
+FORTRAN subset in SNOBOL4
+  -> simple IR
+  -> COR24 p-code
+  -> COR24 VM / emulator
+That keeps SNOBOL4 where it shines, and lets your runtime/backend evolve independently.
+
+The only thing I would not do first is compile directly from SNOBOL4 to raw COR24 assembly. That couples too many hard problems at once.
+
+Bottom line
+Yes, this is quite feasible.
+
+What it entails is less “do numeric computing in SNOBOL4” and more:
+
+define a narrow FORTRAN subset
+
+use SNOBOL4 as the front-end and transformation engine
+
+keep expression parsing separate from statement recognition
+
+generate a simple IR first
+
+target your real runtime/backend only after the front end works
+
+That gives you a historically plausible, technically sound path.
+
+I can turn this into a concrete phased project plan with modules, IR design, sample grammar, and 3–5 starter test programs next.
+
+
+okay, proceed, but let's choose PL/SW as the IR or target.  I might revisit this when I have a C-compiler with software floating point library.  Or I might add floating point to PL/SW as a library.  Anyway, let's start with PL/SW.  project repo will be sw-cor24-fortran (but the branding/naming will be the subset educational one first)
+
+You want to proceed with a subset educational FORTRAN compiler hosted in SNOBOL4, with PL/SW as the first target/IR, and the repository name will be sw-cor24-fortran while the language/subset itself gets a more teaching-oriented name.
+
+That is a strong choice. It simplifies the architecture in a useful way:
+
+SNOBOL4 handles source normalization, parsing, symbol tables, and source transformation.
+
+PL/SW becomes the portable, inspectable compiler output.
+
+Later, PL/SW can target COR24 cleanly.
+
+Floating point can wait until either:
+
+your C compiler plus software FP runtime is ready, or
+
+PL/SW grows a software FP library.
+
+High-level architecture
+The best first design is:
+
+Educational FORTRAN subset source
+  -> SNOBOL4 frontend
+  -> normalized statement representation
+  -> semantic checks
+  -> PL/SW emission
+  -> PL/SW toolchain
+  -> COR24 assembly / binary
+This keeps each stage understandable and testable.
+
+Naming and scope
+I would separate these three names:
+
+Repository
+sw-cor24-fortran
+
+Educational language/subset name
+Pick something explicit and modest, such as:
+
+FTI-0 = FORTRAN Teaching Integer subset, revision 0
+
+EduFOR-I
+
+FORTRAN-SW/INT
+
+MiniFOR-I
+
+My recommendation: FTI-0.
+
+It is short, honest, and leaves room for:
+
+FTI-1
+
+FTI-2
+
+later FP-enabled variants
+
+Compiler executable name
+Something like:
+
+fti0c
+
+swftic
+
+fortran0
+
+I would use fti0c.
+
+1. Product definition
+Goal
+Create a small educational compiler that accepts a narrow, fixed-form FORTRAN-like integer subset and emits PL/SW source.
+
+Non-goals for first version
+Do not support yet:
+
+REAL / DOUBLE PRECISION
+
+FORMAT
+
+EQUIVALENCE
+
+COMMON
+
+DATA
+
+statement functions
+
+complex numbers
+
+implied DO in I/O
+
+multidimensional arrays initially
+
+separate compilation
+
+optimization
+
+First accepted subset
+I recommend this initial grammar surface:
+
+PROGRAM name
+
+INTEGER A, B, I, N
+
+DIMENSION A(10)
+
+assignment
+
+IF (expr) GOTO label
+
+GOTO label
+
+DO 100 I = 1, N
+
+CONTINUE
+
+PRINT *, expr-list
+
+READ *, var-list
+
+STOP
+
+END
+
+Optional later:
+
+arithmetic IF
+
+integer functions
+
+subroutines
+
+arrays with expression subscripts
+
+2. Architectural decision: PL/SW as target, not just IR
+You said “PL/SW as the IR or target.” I recommend treating it as structured target output, while internally the SNOBOL4 compiler still uses a tiny abstract representation.
+
+So there are really two internal levels:
+
+AST / statement records
+  -> tiny compiler IR / normalized control-flow records
+  -> PL/SW output
+Why keep a tiny internal representation?
+
+Because direct AST-to-PL/SW emission gets messy around:
+
+labels
+
+DO loop lowering
+
+temporary variables
+
+branch targets
+
+array subscripts
+
+expression evaluation order
+
+The internal representation can be very small. It does not need to be a full VM instruction set.
+
+3. Recommended subset semantics
+Type system
+For version 0:
+
+only INTEGER
+
+all variables must be declared
+
+no implicit typing
+
+This is less historically faithful, but much easier to reason about and test.
+
+Later, if desired, add a compiler switch:
+
+--implicit-fortran-types
+
+Integers
+Choose and document one of:
+
+24-bit signed integer, matching COR24 world
+
+32-bit signed integer in PL/SW abstraction
+
+target-defined integer
+
+I recommend:
+
+language semantic integer = target PL/SW integer
+
+but document that for COR24 the practical runtime may be 24-bit signed wraparound
+
+That avoids promising more than the machine will deliver.
+
+Division
+Decide now:
+
+truncation toward zero?
+
+floor?
+
+target runtime specific?
+
+Recommendation:
+
+truncate toward zero
+
+Arrays
+Version 0:
+
+one-dimensional only
+
+lower bound always 1
+
+Example:
+
+      DIMENSION A(10)
+No A(0:9) style bounds yet.
+
+DO loop
+Support canonical counted DO only:
+
+      DO 100 I = 1, N
+Optional step later:
+
+      DO 100 I = 1, N, 2
+Version 0 can default step to 1.
+
+4. Source language constraints
+Since this is educational, define a clean fixed-form subset rather than all historical weirdness.
+
+Source form v0
+columns 1-5: optional numeric label
+
+column 6: continuation marker optional
+
+columns 7-72: statement text
+
+C or * in column 1 = comment
+
+ignore beyond col 72 for now
+
+This gives historical flavor without trying to emulate every vendor quirk.
+
+Statement normalization
+The frontend should produce normalized statements such as:
+
+Input:
+
+  100 DO 200 I = 1, N
+Normalized internal record:
+
+label=100
+kind=DO
+end_label=200
+var=I
+start=1
+limit=N
+step=1
+That normalization layer is one of the most valuable compiler phases.
+
+5. Compiler phases
+Phase A: line ingestion and normalization
+Responsibilities:
+
+read source line
+
+detect comment line
+
+split label / continuation / body columns
+
+merge continued statements
+
+retain source line mapping
+
+Output:
+
+normalized statement records with source locations
+
+Phase B: statement classification
+Recognize:
+
+PROGRAM
+
+INTEGER
+
+DIMENSION
+
+assignment
+
+IF (...) GOTO
+
+GOTO
+
+DO
+
+CONTINUE
+
+PRINT
+
+READ
+
+STOP
+
+END
+
+Phase C: expression parsing
+Separate module for:
+
+integer literal
+
+variable ref
+
+array ref
+
+unary minus
+
+binary + - * /
+
+parentheses
+
+Use precedence climbing or shunting-yard.
+
+Recommendation: shunting-yard to postfix, then build tree or emit structured expression records.
+
+Phase D: semantic analysis
+Responsibilities:
+
+declared names
+
+duplicate declarations
+
+array/scalar distinction
+
+label definitions
+
+label references
+
+DO end labels
+
+assignment target validity
+
+READ target validity
+
+Phase E: lowering
+Convert parsed statements to a simpler normalized compiler form.
+
+Example:
+
+DO I = 1,N label 100
+becomes roughly:
+
+I := 1
+L_do_test_1:
+if I > N goto L_after_1
+...
+L_do_step_1:
+I := I + 1
+goto L_do_test_1
+L_after_1:
+Then tie label 100 to the step point or end point consistently according to your chosen lowering rule.
+
+Phase F: PL/SW emission
+Emit readable PL/SW.
+
+This is important. The generated PL/SW should be intentionally inspectable, not merely machine-like garbage.
+
+6. Suggested internal data model
+Even if SNOBOL4 stores everything as strings/tables, define these conceptual records.
+
+Source line record
+source_file
+physical_line_number
+raw_text
+label_text
+continuation_flag
+statement_fragment
+Statement record
+statement_id
+source_span
+label_number
+kind
+payload
+Symbol record
+name
+kind: scalar | array | program
+type: integer
+array_len
+storage_class
+plsw_name
+Label record
+fortran_label
+defined_at_stmt
+referenced_by[]
+plsw_label_name
+Expression node
+kind: literal | var | array_ref | unary | binary
+op
+children[]
+value/name
+Lowered statement form
+Examples:
+
+assign target expr
+branch label
+branch_if_zero expr label
+label name
+print expr_list
+read var_list
+stop
+This small normalized layer will pay off quickly.
+
+7. Mapping FORTRAN subset to PL/SW
+You need a source-to-source contract.
+
+Naming conventions
+Generated identifiers should avoid collisions with user names.
+
+Recommendation:
+
+user variables mapped to F_<name>
+
+compiler temporaries mapped to T_<n>
+
+generated labels mapped to L_<n>
+
+program metadata names mapped to M_<name>
+
+Example:
+
+      INTEGER I, N
+becomes roughly:
+
+DCL F_I FIXED BIN(24);
+DCL F_N FIXED BIN(24);
+Adjust exact PL/SW syntax to your compiler's supported subset.
+
+Assignments
+FORTRAN:
+
+      I = N + 1
+PL/SW:
+
+F_I = F_N + 1;
+GOTO
+FORTRAN:
+
+      GOTO 100
+PL/SW:
+
+GOTO L_100;
+or whatever your branch syntax is.
+
+IF GOTO
+FORTRAN:
+
+      IF (I) GOTO 100
+This depends on your chosen supported IF form.
+
+I recommend version 0 supports:
+
+      IF (expr .NE. 0) GOTO 100
+or a simplified pedagogical form.
+
+If you want classic arithmetic IF later:
+
+      IF (E) 10,20,30
+that should be a later milestone.
+
+DO loop
+FORTRAN:
+
+      DO 100 I = 1, N
+Generated structured PL/SW could be:
+
+F_I = 1;
+L_DO_TEST_1:
+IF F_I > F_N THEN GOTO L_DO_EXIT_1;
+...
+L_100:
+F_I = F_I + 1;
+GOTO L_DO_TEST_1;
+L_DO_EXIT_1:
+You may need a more canonical mapping depending on what PL/SW control constructs are available.
+
+Arrays
+FORTRAN:
+
+      DIMENSION A(10)
+      A(I) = 42
+PL/SW:
+
+DCL F_A(10) FIXED BIN(24);
+F_A(F_I) = 42;
+Or equivalent.
+
+8. Repository layout
+I would keep this simple.
+
+sw-cor24-fortran/
+  README.md
+  docs/
+    prd.md
+    architecture.md
+    design.md
+    plan.md
+    subset-fti0.md
+    plsw-mapping.md
+    test-strategy.md
+  snobol4/
+    src/
+      main.sno
+      driver.sno
+      normalize.sno
+      classify.sno
+      expr.sno
+      symbols.sno
+      labels.sno
+      lower.sno
+      emit_plsw.sno
+      errors.sno
+    tests/
+      smoke/
+      parsing/
+      lowering/
+      emission/
+  examples/
+    fti0/
+      hello.f
+      sum1to10.f
+      array1.f
+      gotoloop.f
+  generated/
+  plsw/
+    runtime/
+      fortran_runtime.msw
+    examples/
+  scripts/
+    run-smoke.sh
+    compile-example.sh
+Why this layout works
+docs/ stabilizes architecture decisions early
+
+snobol4/src/ isolates compiler phases
+
+examples/fti0/ gives you a growing regression suite
+
+plsw/runtime/ holds runtime helpers as they emerge
+
+9. Documentation set to create first
+You usually prefer architecture-first work, so here are the core docs.
+
+docs/prd.md
+Should answer:
+
+what is FTI-0
+
+target audience
+
+what programs it accepts
+
+what it outputs
+
+what it does not support
+
+docs/architecture.md
+Should describe:
+
+compiler phases
+
+data flow
+
+error flow
+
+interfaces between SNOBOL4 passes
+
+emitted PL/SW contract
+
+docs/design.md
+Should define:
+
+statement forms
+
+grammar subset
+
+symbol table shape
+
+label model
+
+lowering rules
+
+PL/SW naming conventions
+
+docs/plan.md
+Should be milestone-driven:
+
+normalizer
+
+classifier
+
+expression parser
+
+semantic pass
+
+lowering
+
+PL/SW emission
+
+sample programs
+
+runtime helpers
+
+docs/subset-fti0.md
+This should be the language reference for the educational subset.
+
+That will matter a lot because “FORTRAN subset” otherwise becomes slippery.
+
+10. Recommended first milestone in detail
+Milestone 0: project skeleton + docs
+Deliverables:
+
+repo skeleton
+
+PRD
+
+architecture
+
+design
+
+plan
+
+subset definition
+
+3 sample source files
+
+empty SNOBOL4 module placeholders
+
+Milestone 1: normalizer + statement dump
+Input:
+
+      PROGRAM TEST
+      INTEGER I
+      I = 1
+      PRINT *, I
+      END
+Output:
+
+stmt1 kind=PROGRAM name=TEST
+stmt2 kind=INTEGER names=I
+stmt3 kind=ASSIGN lhs=I rhs=(1)
+stmt4 kind=PRINT args=(I)
+stmt5 kind=END
+No codegen yet.
+
+Milestone 2: expressions + declarations + assignments
+Compile to PL/SW for:
+
+integer declarations
+
+assignments
+
+print
+
+stop/end
+
+Milestone 3: labels + goto + if goto
+Milestone 4: do loops
+Milestone 5: arrays
+11. Sample subset programs to use immediately
+Program 1: hello integer
+      PROGRAM HELLO
+      INTEGER I
+      I = 42
+      PRINT *, I
+      STOP
+      END
+Program 2: sum 1..10
+      PROGRAM SUM10
+      INTEGER I, S
+      S = 0
+      DO 100 I = 1, 10
+      S = S + I
+  100 CONTINUE
+      PRINT *, S
+      STOP
+      END
+Program 3: simple goto loop
+      PROGRAM COUNT
+      INTEGER I
+      I = 1
+  100 PRINT *, I
+      I = I + 1
+      IF (I - 6) 100,200,200
+  200 STOP
+      END
+I would actually defer arithmetic IF until later, so maybe replace that last one with a simpler conditional form if you are not supporting arithmetic IF in v0.
+
+Program 4: array fill
+      PROGRAM ARR1
+      INTEGER I
+      DIMENSION A(5)
+      DO 100 I = 1, 5
+      A(I) = I * 10
+  100 CONTINUE
+      PRINT *, A(3)
+      STOP
+      END
+12. Runtime expectations on the PL/SW side
+Even with source-to-source generation, you will need a runtime contract.
+
+Likely runtime helpers later
+integer print
+
+newline
+
+integer input
+
+bounds checking optionally
+
+stop/exit
+
+maybe array base calculations later
+
+For the very first version, emitted PL/SW can call a tiny runtime API such as:
+
+FTI_PRINT_INT(x)
+FTI_PRINT_NL()
+FTI_READ_INT(var)
+FTI_STOP()
+That keeps generated code simpler.
+
+13. Risks and tradeoffs
+Benefits of this approach
+Good fit for SNOBOL4
+You get leverage from symbolic processing where it matters most.
+
+Good fit for PL/SW
+You dogfood PL/SW without overloading it with parser work.
+
+Historically grounded
+A compiler in SNOBOL4 is plausible and interesting.
+
+Teachable
+An educational subset with readable PL/SW output is excellent for documentation and demos.
+
+Risks
+Too much historical FORTRAN fidelity too soon
+That would slow the project badly.
+
+Direct AST-to-PL/SW generation
+This becomes fragile around loops and labels.
+
+Weak debugging visibility
+Without dumps at each phase, the compiler will be hard to evolve.
+
+PL/SW feature mismatch
+If PL/SW lacks a convenient construct, you may need a tiny runtime helper layer sooner than expected.
+
+14. Concrete recommendations
+Here is what I would lock in now.
+
+Decisions to lock in
+Subset name
+FTI-0
+
+Repo
+sw-cor24-fortran
+
+Compiler executable
+fti0c
+
+Semantic constraints
+integer only
+
+explicit declarations only
+
+one-dimensional arrays first
+
+fixed-form source
+
+no arithmetic IF in v0 unless you want it specifically
+
+no FORMAT in v0
+
+Internal compiler discipline
+normalized statement records
+
+separate expression parser
+
+tiny lowered representation before PL/SW emission
+
+readable generated PL/SW
+
+15. Suggested initial docs content outline
+subset-fti0.md
+Sections:
+
+overview
+
+source format
+
+comments
+
+labels
+
+declarations
+
+assignments
+
+expressions
+
+arrays
+
+control flow
+
+I/O
+
+errors
+
+unsupported features
+
+plsw-mapping.md
+Sections:
+
+naming conventions
+
+scalar mapping
+
+array mapping
+
+labels and branches
+
+DO loop lowering
+
+runtime call conventions
+
+integer semantics
+
+test-strategy.md
+Sections:
+
+golden text tests
+
+parser tests
+
+lowering tests
+
+emitted PL/SW snapshot tests
+
+end-to-end tests
+
+16. First implementation order inside SNOBOL4
+I would split the SNOBOL4 side like this:
+
+driver.sno
+
+normalize.sno
+
+classify.sno
+
+expr.sno
+
+symbols.sno
+
+labels.sno
+
+lower.sno
+
+emit_plsw.sno
+
+errors.sno
+
+That keeps the compiler phase boundaries clear.
+
+17. Immediate next step
+The correct next step is not writing code first.
+
+The right next step is to freeze the subset and emission contract in writing, because that will prevent churn.
+
+So the first concrete package of work should be:
+
+docs/prd.md
+
+docs/architecture.md
+
+docs/design.md
+
+docs/plan.md
+
+docs/subset-fti0.md
+
+docs/plsw-mapping.md
+
+Then create:
+
+3–5 example .f programs
+
+empty SNOBOL4 phase files
+
+a test harness script
+
+Proposed project identity
+Repository
+sw-cor24-fortran
+
+Educational subset
+FTI-0
+FORTRAN Teaching Integer subset, revision 0
+
+Compiler
+fti0c
+
+Tagline
+A small educational FORTRAN subset compiler in SNOBOL4 targeting PL/SW.
+
+If you want, I’ll draft the initial six markdown docs and the starter repo tree content next.
+
+
+Okay, FTI-0, fti0c, A small educational FORTRAN subset compiler in SNOBOL4 targeting PL/SW. are all good.  draft the docs and tree layout (I have a placeholder repo)
+
+Below is a workable first-pass documentation set and repository layout for sw-cor24-fortran.
+
+I’ve optimized this for:
+
+a narrow, testable first subset
+
+clear compiler phase boundaries
+
+inspectable generated PL/SW
+
+future expansion to arrays, procedures, and later floating point
+
+Proposed repository tree
+sw-cor24-fortran/
+├── README.md
+├── LICENSE
+├── docs/
+│   ├── prd.md
+│   ├── architecture.md
+│   ├── design.md
+│   ├── plan.md
+│   ├── subset-fti0.md
+│   ├── plsw-mapping.md
+│   └── test-strategy.md
+├── snobol4/
+│   ├── README.md
+│   ├── src/
+│   │   ├── main.sno
+│   │   ├── driver.sno
+│   │   ├── normalize.sno
+│   │   ├── classify.sno
+│   │   ├── expr.sno
+│   │   ├── symbols.sno
+│   │   ├── labels.sno
+│   │   ├── lower.sno
+│   │   ├── emit_plsw.sno
+│   │   ├── listing.sno
+│   │   ├── options.sno
+│   │   ├── errors.sno
+│   │   └── util.sno
+│   └── tests/
+│       ├── smoke/
+│       ├── normalize/
+│       ├── classify/
+│       ├── expr/
+│       ├── lower/
+│       └── emit/
+├── examples/
+│   ├── hello.f
+│   ├── sum10.f
+│   ├── countup.f
+│   ├── array1.f
+│   └── goto1.f
+├── plsw/
+│   ├── README.md
+│   ├── runtime/
+│   │   └── fti0_runtime.msw
+│   └── generated/
+├── scripts/
+│   ├── smoke.sh
+│   ├── compile-example.sh
+│   ├── dump-normalized.sh
+│   └── dump-plsw.sh
+└── notes/
+    ├── historical-notes.md
+    └── future-floating-point.md
+README.md
+# sw-cor24-fortran
+
+**FTI-0**  
+*A small educational FORTRAN subset compiler in SNOBOL4 targeting PL/SW.*
+
+## Overview
+
+`sw-cor24-fortran` is an experimental educational compiler project.
+
+The first language subset is **FTI-0**:
+
+- a small, fixed-form, integer-only FORTRAN-like subset
+- implemented in **SNOBOL4**
+- targeting **PL/SW**
+- designed for clarity, testability, and historical flavor rather than full FORTRAN compatibility
+
+The initial goal is to compile small educational programs such as:
+
+- integer assignment
+- simple expressions
+- `GOTO`
+- counted `DO`
+- `PRINT`
+- `READ`
+- one-dimensional integer arrays
+
+The project is intentionally staged:
+
+1. normalize and parse fixed-form source
+2. build symbols and resolve labels
+3. lower control flow to a simple normalized form
+4. emit readable PL/SW
+5. later revisit floating point and richer FORTRAN features
+
+## Status
+
+This repository currently defines:
+
+- the project structure
+- the FTI-0 language subset
+- the compiler architecture
+- the PL/SW mapping contract
+- the milestone plan
+
+Compiler implementation is expected to begin with source normalization and statement classification.
+
+## Repository structure
+
+- `docs/` — product, architecture, design, plan, subset definition
+- `snobol4/` — compiler source and tests
+- `examples/` — sample FTI-0 input programs
+- `plsw/` — runtime helpers and generated output
+- `scripts/` — development helpers
+
+## First milestone
+
+The first executable milestone is:
+
+- accept a tiny `.f` source file
+- normalize fixed-form statements
+- classify statements
+- dump normalized statement records
+
+No code generation is required for the first milestone.
+
+## Naming
+
+- Repository: `sw-cor24-fortran`
+- Subset language: `FTI-0`
+- Compiler executable: `fti0c`
+
+## Non-goals for FTI-0
+
+FTI-0 does **not** initially support:
+
+- floating point
+- `FORMAT`
+- `COMMON`
+- `EQUIVALENCE`
+- statement functions
+- separate compilation
+- optimization
+- multidimensional arrays
+- full FORTRAN compatibility
+
+## Long-term direction
+
+Possible later stages include:
+
+- richer FORTRAN subset levels
+- arithmetic IF
+- subroutines and functions
+- software floating point
+- direct or indirect lowering into COR24-oriented toolchains
+docs/prd.md
+# Product Requirements Document
+
+## Product name
+
+**FTI-0**  
+FORTRAN Teaching Integer subset, revision 0.
+
+## Tagline
+
+A small educational FORTRAN subset compiler in SNOBOL4 targeting PL/SW.
+
+## Purpose
+
+FTI-0 exists to provide a small, historically inspired, educational compiler project that is:
+
+- understandable
+- testable
+- incrementally buildable
+- suitable for demonstration and experimentation
+- compatible with a larger toolchain centered around PL/SW and COR24-related systems
+
+The compiler implementation language is **SNOBOL4**.  
+The initial code generation target is **PL/SW**.
+
+## Users
+
+Primary users are:
+
+- the project author
+- language and compiler experimenters
+- people interested in small historical language subsets
+- users who want inspectable compiler output rather than opaque code generation
+
+## Core value
+
+The core value of the project is not full FORTRAN compatibility.  
+The core value is:
+
+- educational compiler construction
+- fixed-form source handling
+- explicit statement normalization
+- readable lowering into PL/SW
+- a platform for later experiments such as software floating point
+
+## FTI-0 scope
+
+FTI-0 is an integer-only subset with fixed-form source and explicit declarations.
+
+Initial supported capabilities:
+
+- `PROGRAM`
+- `INTEGER`
+- `DIMENSION`
+- assignment
+- `GOTO`
+- counted `DO`
+- `CONTINUE`
+- simple conditional transfer form
+- `PRINT *`
+- `READ *`
+- `STOP`
+- `END`
+
+## Goals
+
+### G1. Fixed-form educational subset
+
+The compiler shall accept a narrow, documented, fixed-form source format inspired by classic FORTRAN.
+
+### G2. Clear compiler phases
+
+The compiler shall be structured into explicit passes:
+
+- normalization
+- classification
+- expression parsing
+- semantic analysis
+- lowering
+- PL/SW emission
+
+### G3. Readable emitted PL/SW
+
+The compiler shall generate PL/SW that is intended to be read and debugged by humans.
+
+### G4. Strong observability
+
+The compiler shall support intermediate dumps for:
+
+- normalized statements
+- symbols
+- labels
+- lowered form
+- emitted PL/SW
+
+### G5. Incremental development
+
+The implementation shall be milestone-driven, with working behavior at each step.
+
+## Non-goals
+
+FTI-0 does not initially attempt to provide:
+
+- full FORTRAN IV/66/77 compatibility
+- floating point types
+- formatted I/O
+- `COMMON`
+- `EQUIVALENCE`
+- `DATA`
+- subprogram linkage
+- optimization
+- multidimensional arrays
+- exact compatibility with vendor quirks
+
+## Constraints
+
+### C1. Implementation language
+
+The compiler implementation language is SNOBOL4.
+
+### C2. First target
+
+The first target language is PL/SW.
+
+### C3. Simple semantics
+
+Semantics should favor clarity over historical edge-case fidelity.
+
+### C4. Explicit declarations
+
+Initial versions shall require explicit declarations for variables.
+
+## Success criteria
+
+Phase 1 success:
+
+- a small source file can be normalized and classified
+
+Phase 2 success:
+
+- a small assignment-and-print program can be translated to PL/SW
+
+Phase 3 success:
+
+- labels, branches, and counted loops compile correctly
+
+Phase 4 success:
+
+- one-dimensional integer arrays compile correctly
+
+## Out of scope for now
+
+Floating point support is explicitly deferred pending one or more of:
+
+- a software floating point library in PL/SW
+- a C compiler path with software floating point
+- a later FTI subset revision
+docs/architecture.md
+# Architecture
+
+## Overview
+
+FTI-0 is a source-to-source compiler:
+
+```text
+FTI-0 source
+  -> normalization
+  -> statement classification
+  -> expression parsing
+  -> semantic analysis
+  -> lowering
+  -> PL/SW emission
+The implementation language is SNOBOL4.
+The emitted target language is PL/SW.
+
+Architectural priorities
+The architecture prioritizes:
+
+phase separation
+
+inspectability
+
+deterministic output
+
+explicit intermediate representations
+
+easy extension in later revisions
+
+Compiler phases
+1. Driver
+Responsibilities:
+
+read options
+
+open input/output files
+
+coordinate passes
+
+select dump modes
+
+report final success/failure
+
+Primary file:
+
+snobol4/src/driver.sno
+
+2. Normalization
+Responsibilities:
+
+read fixed-form physical lines
+
+detect comments
+
+extract label field
+
+process continuation
+
+assemble logical statements
+
+preserve source line mapping
+
+Output:
+
+normalized statement records
+
+Primary file:
+
+snobol4/src/normalize.sno
+
+3. Statement classification
+Responsibilities:
+
+identify statement kind
+
+split major fields
+
+route expressions and lists to specialized parsing
+
+Recognized statement families include:
+
+program start
+
+declarations
+
+assignment
+
+branch
+
+loop
+
+I/O
+
+terminators
+
+Primary file:
+
+snobol4/src/classify.sno
+
+4. Expression parsing
+Responsibilities:
+
+tokenize expressions
+
+parse precedence and parentheses
+
+construct expression trees or equivalent records
+
+Supported expression forms in FTI-0:
+
+integer literals
+
+scalar references
+
+array references
+
+unary minus
+
++ - * /
+
+Primary file:
+
+snobol4/src/expr.sno
+
+5. Semantic analysis
+Responsibilities:
+
+symbol declaration tracking
+
+scalar vs array validation
+
+label definition/reference tracking
+
+duplicate declaration detection
+
+undefined label detection
+
+statement-specific checks
+
+Primary files:
+
+snobol4/src/symbols.sno
+
+snobol4/src/labels.sno
+
+6. Lowering
+Responsibilities:
+
+convert parsed statements into a smaller normalized control-flow-oriented form
+
+make loop expansion explicit
+
+assign generated temporary names and internal labels
+
+Lowering is deliberately simple and not intended as a stable external IR.
+
+Primary file:
+
+snobol4/src/lower.sno
+
+7. PL/SW emission
+Responsibilities:
+
+map symbols to PL/SW declarations
+
+emit readable labels and branches
+
+emit runtime calls for basic I/O and stop
+
+preserve useful comments/source mapping when practical
+
+Primary file:
+
+snobol4/src/emit_plsw.sno
+
+Data flow
+Source input
+Input is a fixed-form .f source file.
+
+Intermediate forms
+The compiler uses several conceptual representations:
+
+physical line records
+
+logical normalized statement records
+
+classified statement records
+
+expression nodes
+
+semantic tables
+
+lowered normalized statements
+
+PL/SW output text
+
+Error model
+Errors should be reported with:
+
+phase name
+
+source line number if available
+
+original or normalized source text if useful
+
+concise explanation
+
+Example classes:
+
+invalid fixed-form source
+
+unknown statement form
+
+malformed expression
+
+duplicate declaration
+
+use of undeclared variable
+
+undefined label
+
+type/class mismatch
+
+Observability modes
+Recommended dump modes:
+
+-dump-lines
+
+-dump-statements
+
+-dump-symbols
+
+-dump-labels
+
+-dump-lowered
+
+-dump-plsw
+
+These modes are essential for incremental compiler development.
+
+Target architecture relationship
+FTI-0 does not directly target COR24 machine code in the first stage.
+
+Instead:
+
+FTI-0
+  -> PL/SW
+  -> later PL/SW toolchain stages
+This keeps the frontend stable while backend and runtime choices evolve.
+
+Rationale for PL/SW target
+PL/SW is chosen as the first target because it provides:
+
+inspectable output
+
+alignment with the broader toolchain
+
+a better first stage than direct assembly emission
+
+a future path toward integer and later floating-point runtime support
+
+
+---
+
+# `docs/design.md`
+
+```md
+# Design
+
+## Overview
+
+This document describes the concrete design of the FTI-0 compiler.
+
+The compiler is intentionally small and explicit. It does not rely on hidden or overly clever transformations. The design emphasizes named phases, normalized records, and readable generated PL/SW.
+
+## Source form
+
+FTI-0 uses a restricted fixed-form source layout.
+
+### Columns
+
+- columns 1-5: optional numeric label
+- column 6: continuation marker
+- columns 7-72: statement text
+- column 1 containing `C` or `*`: comment line
+
+Anything beyond column 72 is ignored in the first implementation.
+
+## Statement model
+
+Each logical statement should be represented internally as a record with at least:
+
+- statement id
+- source line mapping
+- optional label
+- statement kind
+- statement-specific payload
+
+Example conceptual record:
+
+```text
+stmt_id=7
+label=100
+kind=DO
+payload:
+  var=I
+  start_expr=1
+  limit_expr=N
+  step_expr=1
+  end_label=100
+Statement kinds
+Initial kinds:
+
+PROGRAM
+
+INTEGER_DECL
+
+DIMENSION_DECL
+
+ASSIGN
+
+GOTO
+
+IF_GOTO
+
+DO
+
+CONTINUE
+
+PRINT
+
+READ
+
+STOP
+
+END
+
+Symbol table design
+Each symbol entry should include:
+
+source name
+
+generated PL/SW name
+
+class: scalar or array
+
+type: integer
+
+array length if applicable
+
+declaration source location
+
+Example:
+
+name=I
+plsw_name=F_I
+class=scalar
+type=integer
+For arrays:
+
+name=A
+plsw_name=F_A
+class=array
+type=integer
+extent=10
+Label table design
+Each label entry should include:
+
+FORTRAN label number
+
+generated PL/SW label name
+
+defining statement
+
+references
+
+Example:
+
+fortran_label=100
+plsw_label=L_100
+defined_at=stmt_9
+referenced_by=stmt_4,stmt_8
+Expression design
+Expressions should be parsed separately from statement classification.
+
+Supported node kinds:
+
+integer literal
+
+scalar variable reference
+
+array reference
+
+unary operator
+
+binary operator
+
+Supported operators:
+
+unary -
+
+binary +
+
+binary -
+
+binary *
+
+binary /
+
+Parentheses are supported.
+
+Expression parsing approach
+Recommended implementation approach:
+
+tokenize expression text
+
+convert with precedence handling
+
+build expression nodes
+
+Either precedence climbing or shunting-yard is acceptable.
+The preferred initial design is shunting-yard because it is easy to debug with dump output.
+
+Lowered normalized form
+Before emission, control-flow-heavy statements should be lowered.
+
+Lowered forms may include:
+
+label
+
+assignment
+
+conditional branch
+
+unconditional branch
+
+print call
+
+read call
+
+stop call
+
+This form is internal to the compiler and does not need a stable file format.
+
+DO loop lowering
+A counted DO loop:
+
+      DO 100 I = 1, N
+should lower to an explicit sequence conceptually equivalent to:
+
+I := 1
+L_DO_TEST_1:
+if I > N goto L_DO_EXIT_1
+... body ...
+L_100:
+I := I + 1
+goto L_DO_TEST_1
+L_DO_EXIT_1:
+The exact generated labels may differ, but the semantics must be documented and consistent.
+
+Conditional transfer design
+For the first version, prefer a simplified conditional transfer form rather than classic arithmetic IF.
+
+Recommended supported form:
+
+      IF (expr) GOTO label
+with semantics:
+
+branch if expr is nonzero
+
+Arithmetic IF may be added later as a separate milestone.
+
+I/O design
+Initial I/O is intentionally small.
+
+Supported forms
+PRINT *, expr-list
+
+READ *, var-list
+
+Emission strategy
+Generated PL/SW should call runtime helpers such as:
+
+FTI_PRINT_INT(x)
+
+FTI_PRINT_NL()
+
+FTI_READ_INT(x)
+
+FTI_STOP()
+
+This keeps the generated code simple.
+
+Naming conventions
+To avoid collisions and keep generated code readable:
+
+user scalar or array names map to F_<name>
+
+generated internal labels map to L_<n> or L_<fortran_label>
+
+generated temporaries map to T_<n>
+
+Examples:
+
+I -> F_I
+
+A -> F_A
+
+source label 100 -> L_100
+
+Declaration policy
+FTI-0 requires explicit declaration of variables through:
+
+INTEGER
+
+DIMENSION
+
+No implicit typing is enabled in the initial version.
+
+Unsupported constructs in design v0
+Not supported yet:
+
+multidimensional arrays
+
+subroutines
+
+functions
+
+COMMON
+
+EQUIVALENCE
+
+floating-point types
+
+FORMAT
+
+DATA
+
+computed GOTO
+
+
+---
+
+# `docs/plan.md`
+
+```md
+# Plan
+
+## Overview
+
+This plan is milestone-driven. Each milestone should produce something observable and testable.
+
+## Milestone 0 — Repository and documents
+
+### Goals
+
+- establish project naming
+- define repository structure
+- create architectural and subset documentation
+- create sample input programs
+
+### Deliverables
+
+- README
+- PRD
+- architecture
+- design
+- plan
+- subset definition
+- PL/SW mapping
+- test strategy
+- example `.f` files
+- SNOBOL4 module placeholders
+
+## Milestone 1 — Source normalization
+
+### Goals
+
+- read fixed-form source
+- detect comments
+- extract labels
+- merge continuation lines
+- produce logical statements
+
+### Deliverables
+
+- `normalize.sno`
+- normalized statement dump mode
+- tests for comments, labels, continuation, column rules
+
+### Success criteria
+
+Given a small input file, the compiler emits a correct normalized statement listing.
+
+## Milestone 2 — Statement classification
+
+### Goals
+
+- identify supported statement kinds
+- split declarations and I/O lists
+- isolate expression text for later parsing
+
+### Deliverables
+
+- `classify.sno`
+- classified statement dump mode
+- tests per statement form
+
+### Success criteria
+
+A small file with declarations, assignments, and terminators is correctly classified.
+
+## Milestone 3 — Expression parsing
+
+### Goals
+
+- tokenize and parse arithmetic expressions
+- support literals, variables, arrays, unary minus, binary ops, parentheses
+
+### Deliverables
+
+- `expr.sno`
+- expression dump mode
+- precedence tests
+
+### Success criteria
+
+Expressions in assignment and print statements parse correctly.
+
+## Milestone 4 — Symbols and labels
+
+### Goals
+
+- build symbol table
+- build label table
+- report duplicate declarations and undefined labels
+- distinguish scalar and array usage
+
+### Deliverables
+
+- `symbols.sno`
+- `labels.sno`
+- symbol/label dump modes
+- semantic tests
+
+### Success criteria
+
+Compiler rejects malformed inputs and accepts valid ones with correct symbol/label tables.
+
+## Milestone 5 — Lowering
+
+### Goals
+
+- lower high-level statements to simple explicit control-flow forms
+- make loop expansion visible
+
+### Deliverables
+
+- `lower.sno`
+- lowered form dump mode
+- loop lowering tests
+
+### Success criteria
+
+Assignments, branches, and counted loops lower consistently.
+
+## Milestone 6 — PL/SW emission
+
+### Goals
+
+- emit readable PL/SW
+- generate declarations, labels, branches, runtime calls
+- preserve useful source correspondence
+
+### Deliverables
+
+- `emit_plsw.sno`
+- output `.msw` or equivalent generated text
+- snapshot tests
+
+### Success criteria
+
+Hello-world-like integer examples compile to plausible PL/SW.
+
+## Milestone 7 — End-to-end examples
+
+### Goals
+
+- compile a small suite of example programs
+- validate emitted PL/SW for readability and correctness
+
+### Deliverables
+
+- working example set
+- generated PL/SW checked into or regenerated under scripts
+- smoke test script
+
+### Success criteria
+
+The example suite passes regression checks.
+
+## Milestone 8 — Arrays and richer control flow
+
+### Goals
+
+- one-dimensional array support
+- loop/indexing validation
+- refine conditional forms
+
+### Deliverables
+
+- array tests
+- updated emitter
+- updated runtime helpers if required
+
+## Deferred milestones
+
+Deferred until later:
+
+- arithmetic IF
+- subroutines
+- integer functions
+- multidimensional arrays
+- software floating point
+- REAL support
+- formatted I/O
+docs/subset-fti0.md
+# FTI-0 Language Subset
+
+## Overview
+
+FTI-0 is an educational, integer-only, fixed-form subset inspired by classic FORTRAN.
+
+It is intentionally smaller and simpler than historical FORTRAN dialects. The goal is to support a teachable compiler pipeline rather than to reproduce every legacy feature or edge case.
+
+## Source format
+
+FTI-0 source is fixed-form.
+
+### Columns
+
+- columns 1-5: optional numeric statement label
+- column 6: continuation marker
+- columns 7-72: statement body
+- comment lines begin with `C` or `*` in column 1
+
+Anything beyond column 72 is ignored in version 0.
+
+## Case
+
+The initial implementation may normalize identifiers and keywords to uppercase.
+
+## Program structure
+
+A small program typically has the form:
+
+```fortran
+      PROGRAM HELLO
+      INTEGER I
+      I = 42
+      PRINT *, I
+      STOP
+      END
+Declarations
+INTEGER
+Declares integer scalar variables.
+
+Example:
+
+      INTEGER I, N, SUM
+DIMENSION
+Declares one-dimensional integer arrays.
+
+Example:
+
+      DIMENSION A(10)
+In FTI-0, arrays are:
+
+integer arrays
+
+one-dimensional only
+
+indexed from 1 to extent
+
+Statements
+PROGRAM
+Defines program name.
+
+Example:
+
+      PROGRAM SUM10
+Assignment
+Example:
+
+      I = 3
+      SUM = SUM + I
+      A(I) = I * 10
+GOTO
+Example:
+
+      GOTO 100
+IF (...) GOTO
+FTI-0 initially supports the simple form:
+
+      IF (expr) GOTO 100
+Semantics:
+
+if expr is nonzero, branch to label 100
+
+DO
+Counted DO with optional default step of 1.
+
+Example:
+
+      DO 100 I = 1, 10
+A later revision may add explicit step:
+
+      DO 100 I = 1, 10, 2
+CONTINUE
+Example:
+
+  100 CONTINUE
+PRINT
+Only list-directed style is initially supported.
+
+Example:
+
+      PRINT *, I
+      PRINT *, I, SUM, A(3)
+READ
+Only list-directed style is initially supported.
+
+Example:
+
+      READ *, I, N
+STOP
+Example:
+
+      STOP
+END
+Example:
+
+      END
+Expressions
+Supported expression forms:
+
+integer literal
+
+scalar variable
+
+array element reference
+
+unary minus
+
+binary + - * /
+
+parentheses
+
+Examples:
+
+      I = 1
+      N = (A(3) + 2) * 5
+      SUM = SUM + I
+      X = -I
+Semantics
+Variables
+All variables must be explicitly declared.
+
+FTI-0 does not initially support implicit typing.
+
+Types
+Only integer values are supported.
+
+Arrays
+Only one-dimensional arrays are supported in FTI-0.
+
+Division
+Integer division semantics are target-defined but intended to behave as truncation toward zero.
+
+Labels
+Labels are numeric and appear in columns 1-5.
+
+Example:
+
+  100 CONTINUE
+Unsupported features
+FTI-0 does not initially support:
+
+floating point
+
+REAL, DOUBLE PRECISION
+
+COMMON
+
+EQUIVALENCE
+
+FORMAT
+
+DATA
+
+arithmetic IF
+
+computed GOTO
+
+statement functions
+
+subroutines and functions
+
+multidimensional arrays
+
+character or string types
+
+Example programs
+Hello
+      PROGRAM HELLO
+      INTEGER I
+      I = 42
+      PRINT *, I
+      STOP
+      END
+Sum 1 to 10
+      PROGRAM SUM10
+      INTEGER I, S
+      S = 0
+      DO 100 I = 1, 10
+      S = S + I
+  100 CONTINUE
+      PRINT *, S
+      STOP
+      END
+
+---
+
+# `docs/plsw-mapping.md`
+
+```md
+# PL/SW Mapping
+
+## Overview
+
+FTI-0 compiles to PL/SW as its initial target language.
+
+This document defines the source-to-target mapping contract. The mapping is intended to produce readable PL/SW suitable for inspection and debugging.
+
+## Design goals
+
+The mapping should:
+
+- preserve source intent clearly
+- avoid unnecessary temporary values where possible
+- generate stable names
+- isolate runtime-dependent behavior in helper calls
+
+## Naming conventions
+
+### User variables
+
+User variables are mapped with an `F_` prefix.
+
+Examples:
+
+- `I` -> `F_I`
+- `N` -> `F_N`
+- `SUM` -> `F_SUM`
+- `A` -> `F_A`
+
+### Source labels
+
+FORTRAN source labels map to PL/SW labels with an `L_` prefix.
+
+Example:
+
+- `100` -> `L_100`
+
+### Generated internal labels
+
+Generated compiler labels use a distinct naming scheme such as:
+
+- `L_DO_TEST_1`
+- `L_DO_EXIT_1`
+
+### Temporaries
+
+Compiler-generated temporaries use:
+
+- `T_1`
+- `T_2`
+
+## Declarations
+
+### INTEGER scalar
+
+FTI-0 source:
+
+```fortran
+      INTEGER I
+Conceptual PL/SW target:
+
+DCL F_I FIXED BIN(24);
+Exact PL/SW declaration syntax may be adjusted to match supported PL/SW rules.
+
+DIMENSION array
+FTI-0 source:
+
+      DIMENSION A(10)
+Conceptual PL/SW target:
+
+DCL F_A(10) FIXED BIN(24);
+Assignment mapping
+FTI-0 source:
+
+      I = N + 1
+PL/SW:
+
+F_I = F_N + 1;
+Array assignment:
+
+      A(I) = I * 10
+PL/SW:
+
+F_A(F_I) = F_I * 10;
+Branch mapping
+GOTO
+FTI-0 source:
+
+      GOTO 100
+PL/SW:
+
+GOTO L_100;
+IF (...) GOTO
+FTI-0 source:
+
+      IF (I) GOTO 100
+PL/SW:
+
+IF F_I <> 0 THEN GOTO L_100;
+Exact relational syntax may be adapted to actual PL/SW supported syntax.
+
+DO loop mapping
+FTI-0 source:
+
+      DO 100 I = 1, N
+Conceptual PL/SW:
+
+F_I = 1;
+L_DO_TEST_1:
+IF F_I > F_N THEN GOTO L_DO_EXIT_1;
+...
+L_100:
+F_I = F_I + 1;
+GOTO L_DO_TEST_1;
+L_DO_EXIT_1:
+The compiler may emit equivalent structure with different generated labels.
+
+I/O mapping
+FTI-0 uses runtime helper routines for I/O.
+
+PRINT
+FTI-0 source:
+
+      PRINT *, I, SUM
+Conceptual PL/SW:
+
+CALL FTI_PRINT_INT(F_I);
+CALL FTI_PRINT_INT(F_SUM);
+CALL FTI_PRINT_NL();
+READ
+FTI-0 source:
+
+      READ *, I, N
+Conceptual PL/SW:
+
+CALL FTI_READ_INT(F_I);
+CALL FTI_READ_INT(F_N);
+STOP
+FTI-0 source:
+
+      STOP
+Conceptual PL/SW:
+
+CALL FTI_STOP();
+Runtime contract
+The initial runtime surface is expected to contain helpers such as:
+
+FTI_PRINT_INT
+
+FTI_PRINT_NL
+
+FTI_READ_INT
+
+FTI_STOP
+
+These may later be expanded or renamed based on PL/SW conventions.
+
+Integer semantics
+FTI-0 is integer-only.
+
+The exact storage width may depend on PL/SW and target runtime constraints, but the likely practical execution model is a signed integer aligned with COR24-oriented runtime assumptions.
+
+Source comments
+The emitter may optionally preserve original source lines as comments in generated output to aid debugging.
+
+Example:
+
+/* FTI-0: I = N + 1 */
+F_I = F_N + 1;
+Unsupported mappings for now
+No initial mapping is defined for:
+
+floating point
+
+formatted I/O
+
+subprogram linkage
+
+COMMON
+
+EQUIVALENCE
+
+multidimensional arrays
+
+
+---
+
+# `docs/test-strategy.md`
+
+```md
+# Test Strategy
+
+## Overview
+
+FTI-0 should be built with visible intermediate results and regression tests at each compiler phase.
+
+The project is small enough that golden-file style testing is appropriate.
+
+## Testing priorities
+
+The most important properties are:
+
+- deterministic output
+- stable phase boundaries
+- readable diagnostics
+- easy debugging of regressions
+
+## Test layers
+
+### 1. Normalization tests
+
+Input:
+- fixed-form source fragments
+
+Expected output:
+- normalized logical statements
+
+Covers:
+- comments
+- labels
+- continuation
+- ignored trailing columns
+- blank lines
+
+### 2. Classification tests
+
+Input:
+- normalized statements
+
+Expected output:
+- statement kind and parsed statement shell
+
+Covers:
+- declarations
+- assignment
+- branch statements
+- loop headers
+- I/O
+- terminators
+
+### 3. Expression tests
+
+Input:
+- expression text
+
+Expected output:
+- token stream and/or expression tree dump
+
+Covers:
+- precedence
+- unary minus
+- parentheses
+- array references
+
+### 4. Semantic tests
+
+Input:
+- small programs
+
+Expected output:
+- symbol table
+- label table
+- diagnostics for invalid programs
+
+Covers:
+- undeclared variables
+- duplicate declarations
+- undefined labels
+- scalar/array misuse
+
+### 5. Lowering tests
+
+Input:
+- parsed valid programs
+
+Expected output:
+- lowered control-flow form dump
+
+Covers:
+- DO expansion
+- branch normalization
+- generated labels
+- explicit stop behavior
+
+### 6. Emission tests
+
+Input:
+- lowered programs
+
+Expected output:
+- PL/SW golden text
+
+Covers:
+- declarations
+- labels
+- assignments
+- branches
+- runtime helper calls
+
+### 7. End-to-end smoke tests
+
+Input:
+- example `.f` programs
+
+Expected output:
+- generated PL/SW snapshots
+
+## Recommended test assets
+
+Keep examples small and purpose-specific.
+
+Suggested examples:
+
+- hello world integer
+- sum 1..10 with DO loop
+- simple array store/load
+- simple goto/label program
+- malformed undeclared variable example
+- malformed undefined label example
+
+## Testing style
+
+Preferred testing style:
+
+- golden text files for dumps
+- small focused examples
+- one feature per test where practical
+
+## Diagnostics policy
+
+Errors should be compared in tests by stable fields such as:
+
+- phase
+- source line
+- error code or short message
+
+Avoid fragile tests that depend on incidental formatting only.
+
+## Regression policy
+
+Whenever a new language feature is added:
+
+- add at least one success case
+- add at least one failure case
+- add or update example programs if relevant
+snobol4/README.md
+# SNOBOL4 compiler sources
+
+This directory contains the SNOBOL4 implementation of the FTI-0 compiler.
+
+## Phase-oriented file layout
+
+- `main.sno` — main entry point
+- `driver.sno` — overall orchestration
+- `normalize.sno` — fixed-form input normalization
+- `classify.sno` — statement classification
+- `expr.sno` — expression parsing
+- `symbols.sno` — symbol table management
+- `labels.sno` — label definition/reference tracking
+- `lower.sno` — lowering to normalized control flow
+- `emit_plsw.sno` — PL/SW emission
+- `listing.sno` — intermediate dump support
+- `options.sno` — command line or mode handling
+- `errors.sno` — diagnostics
+- `util.sno` — helpers
+
+The first implementation goal is source normalization and statement dumping.
+plsw/README.md
+# PL/SW output and runtime support
+
+This directory contains:
+
+- small runtime helpers expected by FTI-0 generated code
+- generated PL/SW output for examples and tests
+
+## Runtime expectations
+
+Generated code may rely on helpers such as:
+
+- `FTI_PRINT_INT`
+- `FTI_PRINT_NL`
+- `FTI_READ_INT`
+- `FTI_STOP`
+
+The exact signatures and storage model can be refined as the emitter stabilizes.
+Example input files
+examples/hello.f
+      PROGRAM HELLO
+      INTEGER I
+      I = 42
+      PRINT *, I
+      STOP
+      END
+examples/sum10.f
+      PROGRAM SUM10
+      INTEGER I, S
+      S = 0
+      DO 100 I = 1, 10
+      S = S + I
+  100 CONTINUE
+      PRINT *, S
+      STOP
+      END
+examples/countup.f
+      PROGRAM COUNTUP
+      INTEGER I
+      I = 1
+  100 PRINT *, I
+      I = I + 1
+      IF (6 - I) GOTO 100
+      STOP
+      END
+examples/array1.f
+      PROGRAM ARRAY1
+      INTEGER I
+      DIMENSION A(5)
+      DO 100 I = 1, 5
+      A(I) = I * 10
+  100 CONTINUE
+      PRINT *, A(3)
+      STOP
+      END
+examples/goto1.f
+      PROGRAM GOTO1
+      INTEGER I
+      I = 0
+      GOTO 200
+  100 I = I + 10
+      PRINT *, I
+      STOP
+  200 I = 5
+      GOTO 100
+      END
+Notes on one important issue
+Your current countup.f example above uses:
+
+      IF (6 - I) GOTO 100
+That fits the simple nonzero conditional transfer defined in FTI-0, not classic arithmetic IF. That is fine, but I would document it clearly as:
+
+In FTI-0, IF (expr) GOTO label means “branch if expr is nonzero.”
+
+That keeps the subset simple.
+
+Suggested next implementation order
+I’d do these files first:
+
+normalize.sno
+
+classify.sno
+
+listing.sno
+
+errors.sno
+
+driver.sno
+
+Then add:
+
+expr.sno
+
+symbols.sno
+
+labels.sno
+
+lower.sno
+
+emit_plsw.sno
+
+Small refinement I recommend now
+In subset-fti0.md, keep this sentence:
+
+FTI-0 is inspired by classic FORTRAN, but it is not identical to any historical vendor dialect.
+
+That will save you trouble later when you intentionally simplify semantics.
+
+If you want, I can next turn this into a copy-paste-ready set of actual file contents for the placeholder SNOBOL4 source files and shell scripts.
+
+
+
+
