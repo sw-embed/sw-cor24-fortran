@@ -109,6 +109,16 @@ See `docs/research.txt` for detailed design research and historical context.
 | [sw-cor24-x-assembler](https://github.com/sw-embed/sw-cor24-x-assembler) | COR24 assembler |
 | [sw-cor24-project](https://github.com/sw-embed/sw-cor24-project) | Ecosystem hub |
 
+## Links
+
+- Blog: [Software Wrighter Lab](https://software-wrighter-lab.github.io/)
+- Discord: [Join the community](https://discord.com/invite/Ctzk5uHggZ)
+- YouTube: [Software Wrighter](https://www.youtube.com/@SoftwareWrighter)
+
+## Copyright
+
+Copyright (c) 2026 Michael A. Wright
+
 ## License
 
-See repository for license details.
+MIT License. See [LICENSE](LICENSE) for the full text.
