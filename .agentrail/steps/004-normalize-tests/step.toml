@@ -1,6 +1,6 @@
 number = 4
 slug = "normalize-tests"
-status = "pending"
+status = "blocked"
 description = """
 Create golden-file tests for the normalization phase.
 
