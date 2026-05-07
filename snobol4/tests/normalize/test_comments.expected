@@ -1,0 +1,3 @@
+stmt1 line=3 label= text=INTEGER I
+stmt2 line=5 label= text=I = 42
+stmt3 line=7 label= text=END
