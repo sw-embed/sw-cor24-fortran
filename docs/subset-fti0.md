@@ -29,9 +29,7 @@ A small program typically has the form:
 
 ```fortran
       PROGRAM HELLO
-      INTEGER I
-      I = 42
-      PRINT *, I
+      PRINT *, 'Hello, World!'
       STOP
       END
 ```
@@ -133,11 +131,15 @@ Example:
 
 Only list-directed style is initially supported.
 
+A print list item is either an integer expression or a string literal (see [String literals](#string-literals)). Items of either kind may be mixed in one statement.
+
 Example:
 
 ```fortran
       PRINT *, I
       PRINT *, I, SUM, A(3)
+      PRINT *, 'Hello, World!'
+      PRINT *, 'COUNT =', I
 ```
 
 ### READ
@@ -186,6 +188,26 @@ Examples:
       X = -I
 ```
 
+## String literals
+
+A string literal is a sequence of characters enclosed in apostrophes:
+
+```fortran
+      'Hello, World!'
+```
+
+An embedded apostrophe is written as two consecutive apostrophes:
+
+```fortran
+      'IT''S A LITERAL'
+```
+
+In FTI-0, string literals are permitted **only as immediate `PRINT` arguments**. There are no `CHARACTER` variables, no string-valued expressions, no concatenation, and no `LEN`.
+
+A literal must begin and end on the same source line, and cannot extend past column 72.
+
+Unlike identifiers and keywords, the contents of a string literal are not normalized -- case is preserved exactly as written.
+
 ## Semantics
 
 ### Variables
@@ -231,7 +253,7 @@ FTI-0 does not initially support:
 - statement functions
 - subroutines and functions
 - multidimensional arrays
-- character or string types
+- `CHARACTER` variables and string-valued expressions (string literals are permitted as immediate `PRINT` arguments -- see [String literals](#string-literals))
 
 ## Example programs
 
@@ -239,9 +261,7 @@ FTI-0 does not initially support:
 
 ```fortran
       PROGRAM HELLO
-      INTEGER I
-      I = 42
-      PRINT *, I
+      PRINT *, 'Hello, World!'
       STOP
       END
 ```
