@@ -183,6 +183,37 @@ CALL FTI_PRINT_INT(F_SUM);
 CALL FTI_PRINT_NL();
 ```
 
+A print list item that is a string literal lowers to `FTI_PRINT_STR`:
+
+FTI-0 source:
+
+```fortran
+      PRINT *, 'Hello, World!'
+```
+
+Conceptual PL/SW:
+
+```plsw
+CALL FTI_PRINT_STR('Hello, World!');
+CALL FTI_PRINT_NL();
+```
+
+Mixed lists lower in source order:
+
+FTI-0 source:
+
+```fortran
+      PRINT *, 'COUNT =', I
+```
+
+Conceptual PL/SW:
+
+```plsw
+CALL FTI_PRINT_STR('COUNT =');
+CALL FTI_PRINT_INT(F_I);
+CALL FTI_PRINT_NL();
+```
+
 ### READ
 
 FTI-0 source:
@@ -217,6 +248,7 @@ CALL FTI_STOP();
 The initial runtime surface is expected to contain helpers such as:
 
 - `FTI_PRINT_INT`
+- `FTI_PRINT_STR`
 - `FTI_PRINT_NL`
 - `FTI_READ_INT`
 - `FTI_STOP`
