@@ -1,0 +1,4 @@
+stmt1 line=2 label= text=I = 0
+stmt2 line=3 label=100 text=CONTINUE
+stmt3 line=4 label=25 text=I = I + 1
+stmt4 line=5 label= text=END
