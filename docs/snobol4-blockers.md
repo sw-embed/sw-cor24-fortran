@@ -58,7 +58,51 @@ This issue was filed by the agent that attempted milestone-1 step 002
 that agent's closure note ("Blocked: SNOBOL4 missing SIZE/SUBSTR/CHAR
 -- issue sw-embed/sw-cor24-snobol4#1").
 
-## Status (2026-05-08)
+## Status (2026-05-08, late)
+
+**Update:** dcsno has shipped. `snobol4.lgo`, `snobol4.bin`, and the
+`snobol4` wrapper are now installed at `$TOOLROOT/../lib/cor24/` and
+`$TOOLROOT/`. The original primitives issue (snobol4#1) is resolved
+end-to-end. The live blocker has shifted *again* and is now twofold:
+
+1. **dcemu `--lgo` + `--uart-file` bug** -- the canonical invocation
+   `cor24-emu --lgo snobol4.lgo --uart-file <prog>.sno` silently
+   drops the input. `scripts/verify-snobol4.sh` exhibits this
+   today: the SNOBOL4 interpreter loads (164 KB), reads the first
+   `*` byte off UART, and halts after 397 instructions with no
+   OUTPUT. Tracked at
+   `tools/briefs/dcemu-lgo-load-binary-merge.md`. dcsno's
+   `snobol4` wrapper uses the documented workaround
+   (`cor24-emu --load-binary snobol4.bin@0 --load-binary
+   <prog>@0x080000 --entry 0`) which sidesteps the bug.
+2. **FTI-0 compiler not yet implemented.** Even with a working
+   SNOBOL4 invocation, the milestone-1 saga is archived behind the
+   blocker -- `snobol4/src/normalize.sno` is a draft, the
+   classify/expr/symbols/labels/lower/emit_plsw phases are all
+   stubs. Path B (full compile of `.f`) is many sessions of work.
+
+What this means in practice (2026-05-08):
+
+- The Hello World live demo is **unblocked via Path A** -- a
+  hand-written `examples/hello.s` + pre-built `examples/hello.lgo`,
+  with `scripts/fortran` short-circuiting `examples/hello.f` to
+  the prebaked assembly. Verified end-to-end: `scripts/test-hello.sh`
+  passes; `cor24-emu --lgo examples/hello.lgo --quiet` emits
+  `Hello, World!`.
+- `scripts/verify-snobol4.sh` still exits 1 (FAIL, no UART output)
+  due to the dcemu bug. Updating it to dcsno's binary-only
+  workaround pattern is a follow-up; out of scope for the
+  fortran-hello-world saga.
+- The full FTI-0 compiler effort lives in the archived
+  `milestone-1-source-normalization` saga
+  (`.agentrail-archive/`), waiting for either the dcemu fix or a
+  decision to use the workaround pattern from this repo too.
+
+The pre-update history below is preserved for context.
+
+---
+
+## Status (2026-05-08, original assessment)
 
 The blocker has shifted. The original primitives issue (snobol4#1)
 appears resolved at the source level. The live blocker is now

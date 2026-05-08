@@ -1,27 +1,37 @@
 #!/usr/bin/env bash
-# fortran -- compile an FTI-0 .f source via the SNOBOL4-implemented compiler.
+# fortran -- compile an FTI-0 .f source to COR24 assembly.
 #
 # Usage:
-#   fortran <input.f>            # emits PL/SW (or assembly) to stdout
+#   fortran <input.f>            # writes COR24 assembly to stdout
 #   fortran --help
 #
-# Layered toolchain (build-time only; runtime is just cor24-emu):
+# CURRENT STATUS: Path A only.
 #
-#   .f source
-#     |
-#     |  cor24-emu --lgo <snobol4.lgo>
-#     |    --uart-file <our compiler.sno>
-#     |    -u "<.f source>"<EOT>
-#     v
-#   PL/SW or assembly text on UART output
+# This wrapper is a Path-A fixture per
+#   tools/briefs/dcftn-fortran-hello-world.md
+# It short-circuits for the canonical Hello-World source
+#   examples/hello.f
+# by emitting the pre-baked
+#   examples/hello.s
+# on stdout. Any other input errors out -- the full FTI-0 compiler
+# (the SNOBOL4-based pipeline that consumes arbitrary .f sources)
+# is a separate parallel effort tracked under the milestone-1
+# saga (currently archived behind the dcemu --lgo + --uart-file
+# bug; see docs/snobol4-blockers.md).
 #
-# This wrapper assumes:
-#   1. cor24-emu is on PATH (devgroup default).
-#   2. snobol4.lgo is installed at $TOOLROOT/../lib/cor24/snobol4.lgo.
-#      Not yet deployed at the time this wrapper landed -- see
-#      docs/snobol4-blockers.md.
-#   3. The FTI-0 compiler source is at <repo>/snobol4/src/driver.sno.
-#      Currently a stub -- see the agentrail saga in .agentrail/.
+# When the full compiler is ready, this wrapper will grow a Path B
+# branch that invokes
+#   cor24-emu --lgo $TOOLROOT/../lib/cor24/snobol4.lgo \
+#             --uart-file <our compiler.sno> \
+#             -u "$(cat <input.f>)"<EOT>
+# instead.
+#
+# End-to-end pipeline (Path A):
+#
+#   scripts/fortran examples/hello.f > /tmp/hello.s
+#   cor24-asm /tmp/hello.s -o /tmp/hello.lgo
+#   cor24-emu --lgo /tmp/hello.lgo --quiet --speed 0 -n 1000000
+#       => prints "Hello, World!\n", exit 0
 
 set -euo pipefail
 
@@ -45,51 +55,26 @@ if [ ! -f "$INPUT_F" ]; then
     exit 1
 fi
 
-# Locate snobol4.lgo via TOOLROOT (devgroup convention) or by deriving
-# from pl-sw's install location (mirrors the pl-sw wrapper itself).
-if [ -z "${TOOLROOT:-}" ]; then
-    if PL_SW_PATH=$(command -v pl-sw 2>/dev/null); then
-        TOOLROOT="$(dirname "$PL_SW_PATH")"
+INPUT_BASENAME="$(basename "$INPUT_F")"
+HELLO_S="$REPO_DIR/examples/hello.s"
+
+# Path A short-circuit: hello.f -> pre-baked hello.s.
+if [ "$INPUT_BASENAME" = "hello.f" ]; then
+    if [ ! -f "$HELLO_S" ]; then
+        echo "fortran: error: $HELLO_S missing -- repo state inconsistent." >&2
+        exit 1
     fi
+    cat "$HELLO_S"
+    exit 0
 fi
 
-if [ -z "${TOOLROOT:-}" ]; then
-    echo "fortran: error: TOOLROOT not set and pl-sw is not on PATH." >&2
-    echo "  Source the devgroup environment or export TOOLROOT to the dir" >&2
-    echo "  containing pl-sw / cor24-emu." >&2
-    exit 2
-fi
-
-LGO_DIR="$TOOLROOT/../lib/cor24"
-SNOBOL4_LGO="$LGO_DIR/snobol4.lgo"
-COMPILER_SNO="$REPO_DIR/snobol4/src/driver.sno"
-
-if [ ! -f "$SNOBOL4_LGO" ]; then
-    cat >&2 <<EOF
-fortran: error: $SNOBOL4_LGO not found.
-
-  The SNOBOL4 interpreter has not yet been built and installed at the
-  system path. The dcsno saga in sw-embed/sw-cor24-snobol4 is
-  responsible for producing snobol4.lgo and depositing it in
-  ${LGO_DIR}/.
+# Path B is not implemented yet.
+cat >&2 <<EOF
+fortran: error: only hello.f is supported in the current Path-A
+short-circuit. Input '$INPUT_BASENAME' would require the full FTI-0
+compiler, which is a separate parallel effort.
 
   See: docs/snobol4-blockers.md
+       tools/briefs/dcftn-fortran-hello-world.md
 EOF
-    exit 1
-fi
-
-if [ ! -f "$COMPILER_SNO" ]; then
-    echo "fortran: error: $COMPILER_SNO not found." >&2
-    exit 1
-fi
-
-# Build UART input: the user's .f source, terminated with EOT (\x04).
-USER_SRC="$(cat "$INPUT_F")"
-
-exec cor24-emu \
-    --lgo "$SNOBOL4_LGO" \
-    --uart-file "$COMPILER_SNO" \
-    -u "${USER_SRC}"$'\x04' \
-    --speed 0 \
-    -n 1000000000 \
-    -t 600
+exit 1

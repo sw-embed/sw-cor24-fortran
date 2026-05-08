@@ -1,9 +1,30 @@
-Milestone 1: Source Normalization
+Saga: fortran-hello-world (the second of three sagas unblocking the
+live-demo at https://sw-embed.github.io/web-sw-cor24-fortran/).
 
-Create the repo skeleton and implement the FTI-0 source normalizer.
+Brief: /disk1/github/softwarewrighter/devgroup/tools/briefs/dcftn-fortran-hello-world.md
+Owner: dcftn
+Branch: pr/fortran-hello-world
+Critical path: dcsno ships -> dcftn ships hello.lgo -> dwftn deploys.
+
+Approach: Path A (per the brief) -- hand-write hello.s as a fixture
+rather than wait for the full FTI-0 compiler. Smallest possible
+Fortran program that prints "Hello, World!" via UART. Updates
+scripts/fortran to short-circuit on hello.f for now. Compiler effort
+continues in a separately-resumed milestone-1-source-normalization
+saga (currently archived).
 
 Steps:
-1. create-repo-skeleton - Create snobol4/src/ with empty .sno placeholder files, examples/ with sample .f files, plsw/runtime/ and plsw/generated/ directories, snobol4/tests/ directories
-2. implement-normalize - Implement normalize.sno: read fixed-form .f source, detect comments (C or * in col 1), extract label field (cols 1-5), detect continuation (col 6), assemble logical statements from continued lines, preserve source line mapping, produce normalized statement records
-3. normalize-tests - Create golden-file tests for normalize.sno covering: comments, labels, continuation lines, blank lines, column rules (ignore beyond col 72), multi-line statements, source line mapping
-4. integrate-driver - Wire normalize.sno into driver.sno with -dump-lines output mode, verify end-to-end from .f input to normalized statement listing
+1. write-hello-asm -- author examples/hello.s by adapting the tc24r
+   demo's UART putc/puts pattern. The string is "Hello, World!\n\0".
+2. assemble-and-verify -- cor24-asm hello.s -> examples/hello.lgo,
+   then cor24-emu --lgo hello.lgo and capture/diff against expected
+   output. Both .s and .lgo committed (.lgo is the demo deliverable
+   for dwftn).
+3. wire-fortran-shortcircuit -- update scripts/fortran so
+   `scripts/fortran examples/hello.f` emits the prebaked
+   examples/hello.s (Path A: short-circuit). When the compiler is
+   ready (separate saga), this short-circuit is removed.
+4. add-regression-test -- a test (scripts/test-hello.sh or similar)
+   that runs the full pipeline and diffs against expected output.
+5. doc-and-readme -- README mention of the live-demo path; brief
+   scope notes in docs/ about Path A short-circuit.

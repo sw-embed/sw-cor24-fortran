@@ -1,0 +1,1 @@
+Added scripts/test-hello.sh: runs fortran|cor24-asm|cor24-emu and diffs against examples/hello.expected. Test passes.
