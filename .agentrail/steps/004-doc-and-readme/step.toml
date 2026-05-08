@@ -1,0 +1,8 @@
+number = 4
+slug = "doc-and-readme"
+status = "pending"
+description = "Add a 'Live demo' section to README.md pointing at examples/hello.f + example..."
+role = "legacy"
+context_files = []
+created_at = "2026-05-08T14:50:18"
+commits = []
