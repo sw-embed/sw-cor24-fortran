@@ -1,11 +1,12 @@
 number = 1
 slug = "write-hello-asm"
-status = "in-progress"
+status = "completed"
 description = """
 Author examples/hello.s -- a minimal COR24 assembly program that
 prints 'Hell..."""
 role = "production"
 context_files = []
 created_at = "2026-05-08T14:21:55"
+completed_at = "2026-05-08T14:47:31"
 task_type = "implement"
-commits = []
+commits = ["216f8e68c31682ab3196c3359bcc0555070ab6fc"]
