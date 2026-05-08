@@ -1,4 +1,108 @@
-* FTI-0 Source Normalizer
-* Fixed-form line handling, continuations, comments
+*       FTI-0 Source Normalizer  --  snobol4/src/normalize.sno
+*
+*       Status: DRAFT (unverified). The dcsno bootstrap brief
+*       (snobol4.lgo deployment) has not yet shipped, so we cannot
+*       run normalize.sno against snobol4/tests/normalize/ fixtures.
+*       See docs/snobol4-blockers.md for the deployment status.
+*
+*       Reads fixed-form .f source via INPUT and emits one normalized
+*       statement record per logical statement:
+*               stmt<N> line=<M> label=<L> text=<text>
+*
+*       Normalization rules (per docs/subset-fti0.md and
+*       snobol4/tests/normalize/README.md):
+*       - lines beginning with 'C' or '*' in col 1 are comments and
+*         are skipped
+*       - blank lines (no text and no label) are skipped
+*       - cols 1-5 hold an optional numeric label; leading and
+*         trailing spaces are stripped
+*       - col 6 = blank or '0' (or absent on a short line)  =>  new
+*         statement
+*       - col 6 = anything else                             =>
+*         continuation; append cols 7-72 of this line to the prior
+*         statement
+*       - cols 7-72 = statement text (rstripped); chars beyond col 72
+*         are ignored by construction (we only extract 66 chars)
+*
+*       Uses only the SIZE / SUBSTR / CHAR builtins that snobol4#1
+*       made available; nothing else from the SNOBOL4 surface that
+*       might still be incomplete in the deployed interpreter.
+*
+*       State variables:
+*         STMT  -- emitted-statement counter (1-based)
+*         LNUM  -- physical-line counter (1-based)
+*         AT    -- accumulator: text of in-progress logical statement
+*         AL    -- accumulator: label of in-progress logical statement
+*         ALN   -- accumulator: starting physical line of in-progress
+*                  logical statement
 
-        END
+        STMT = 0
+        LNUM = 0
+        AT   = ''
+        AL   = ''
+        ALN  = 0
+
+*       === Main loop: read one physical line per iteration. ===
+RD      L = INPUT                               :F(FL)
+        LNUM = LNUM + 1
+
+*       Comment line? (col 1 == 'C' or '*')  Skip.
+        IDENT(SUBSTR(L, 1, 1), 'C')             :S(RD)
+        IDENT(SUBSTR(L, 1, 1), '*')             :S(RD)
+
+*       Extract the three column ranges by raw substring.
+        LR = SUBSTR(L, 1, 5)
+        C6 = SUBSTR(L, 6, 1)
+        TR = SUBSTR(L, 7, 66)
+
+*       Right-trim TR into TXT (drop trailing spaces from cols 7-72).
+        TXT = TR
+RT      EQ(SIZE(TXT), 0)                        :S(RTD)
+        IDENT(SUBSTR(TXT, SIZE(TXT), 1), ' ')   :F(RTD)
+        TXT = SUBSTR(TXT, 1, SIZE(TXT) - 1)
+        :(RT)
+RTD
+
+*       Left-trim then right-trim LR into LBL (so a label like '  25 '
+*       reduces to '25').
+        LBL = LR
+LT      EQ(SIZE(LBL), 0)                        :S(LTD)
+        IDENT(SUBSTR(LBL, 1, 1), ' ')           :F(LTD)
+        LBL = SUBSTR(LBL, 2, SIZE(LBL) - 1)
+        :(LT)
+LTD     EQ(SIZE(LBL), 0)                        :S(LBLD)
+        IDENT(SUBSTR(LBL, SIZE(LBL), 1), ' ')   :F(LBLD)
+        LBL = SUBSTR(LBL, 1, SIZE(LBL) - 1)
+        :(LTD)
+LBLD
+
+*       Blank-line check: skip if both label and text are empty.
+        EQ(SIZE(TXT), 0)                        :F(CL)
+        EQ(SIZE(LBL), 0)                        :S(RD)
+
+*       === Classify col 6: continuation vs new statement ===
+CL      IDENT(C6, '')                           :S(NS)
+        IDENT(C6, ' ')                          :S(NS)
+        IDENT(C6, '0')                          :S(NS)
+        :(CN)
+
+*       New statement: emit prior accumulator (if any), then start
+*       a fresh accumulator from this line's fields.
+NS      EQ(SIZE(AT), 0)                         :S(NSO)
+        STMT = STMT + 1
+        OUTPUT = 'stmt' STMT ' line=' ALN ' label=' AL ' text=' AT
+NSO     AT  = TXT
+        AL  = LBL
+        ALN = LNUM
+        :(RD)
+
+*       Continuation: append cols-7-72 (rstripped) text to the
+*       in-progress accumulator. Label and starting-line stay put.
+CN      AT = AT TXT
+        :(RD)
+
+*       === EOF: flush remaining accumulator if non-empty. ===
+FL      EQ(SIZE(AT), 0)                         :S(END)
+        STMT = STMT + 1
+        OUTPUT = 'stmt' STMT ' line=' ALN ' label=' AL ' text=' AT
+END

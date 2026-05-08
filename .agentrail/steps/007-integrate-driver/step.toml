@@ -1,4 +1,4 @@
-number = 6
+number = 7
 slug = "integrate-driver"
 status = "pending"
 description = "Wire the normalization phase into driver.sno and verify end-to-end functional..."

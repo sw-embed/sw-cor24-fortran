@@ -1,0 +1,11 @@
+number = 5
+slug = "draft-normalize"
+status = "in-progress"
+description = """
+Draft snobol4/src/normalize.sno -- the source normalizer that reads
+fixed-for..."""
+role = "production"
+context_files = []
+created_at = "2026-05-08T11:18:04"
+task_type = "implement"
+commits = []
