@@ -1,0 +1,1 @@
+scripts/fortran rewritten for Path A only: basename hello.f -> cat examples/hello.s; everything else errors. End-to-end pipeline (fortran -> cor24-asm -> cor24-emu) verified to produce 'Hello, World!' exit 0. Negative test on sum10.f errors cleanly with brief reference.

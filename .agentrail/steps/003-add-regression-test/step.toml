@@ -1,0 +1,10 @@
+number = 3
+slug = "add-regression-test"
+status = "pending"
+description = """
+Add a regression test that exercises the full Path A pipeline and
+diffs the o..."""
+role = "legacy"
+context_files = []
+created_at = "2026-05-08T14:49:33"
+commits = []
