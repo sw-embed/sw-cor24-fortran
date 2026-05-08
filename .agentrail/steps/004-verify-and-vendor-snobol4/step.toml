@@ -1,11 +1,12 @@
 number = 4
 slug = "verify-and-vendor-snobol4"
-status = "in-progress"
+status = "completed"
 description = """
 Verify sw-embed/sw-cor24-snobol4#1 (SIZE/SUBSTR/CHAR) is actually
 resolved en..."""
 role = "production"
 context_files = []
 created_at = "2026-05-06T22:26:08"
+completed_at = "2026-05-08T11:11:47"
 task_type = "implement"
-commits = []
+commits = ["b8bb565d917cff3c02c97db97a74068a243c8729"]
