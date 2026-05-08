@@ -1,0 +1,1 @@
+Replaced $REPO_DIR/examples/hello.s file-cat in scripts/fortran with an inline heredoc carrying the same bytes. Wrapper is now self-contained and works from any install location. Verified: from-repo output matches examples/hello.s byte-for-byte; cp-to-/tmp invocation also matches (simulating PATH install); scripts/test-hello.sh OK; negative test (sum10.f) still errors cleanly.
