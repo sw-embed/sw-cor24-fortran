@@ -8,14 +8,17 @@ implemented or executed without three SNOBOL4 builtin functions:
 `sw-embed/sw-cor24-snobol4` interpreter when milestone-1 work began.
 The blocker was filed there as **issue #1**.
 
-**Status as of 2026-05-06:** the sibling repo's `docs/plan.md` and
-its source code indicate the three builtins have been added (issue #1
-appears resolved). The resolution has not yet been verified end-to-end
-against `normalize.sno` -- the interpreter binary has not been built
-on this host, and `normalize.sno` itself was never written.
+**Status as of 2026-05-08:** the *original* blocker (issue #1, missing
+primitives) appears resolved upstream. A second *deployment* blocker is
+now in front of us: the SNOBOL4 interpreter image (`snobol4.lgo`) has
+not yet been built and installed at the system tool location
+(`$TOOLROOT/../lib/cor24/snobol4.lgo`). Without that file, no
+verification or downstream FTI-0 work can run end-to-end.
 
-The next agent should verify the upstream fix and, if confirmed,
-reopen our local saga (currently parked at step 004 marked blocked).
+This session added the runtime plumbing in our repo (`scripts/fortran`,
+`scripts/verify-snobol4.sh`, `snobol4/tests/builtins/`) so that the
+moment `snobol4.lgo` lands, verification and compilation will Just Work
+without further changes here.
 
 ## What FTI-0 needs from SNOBOL4
 
@@ -55,68 +58,84 @@ This issue was filed by the agent that attempted milestone-1 step 002
 that agent's closure note ("Blocked: SNOBOL4 missing SIZE/SUBSTR/CHAR
 -- issue sw-embed/sw-cor24-snobol4#1").
 
-## Current upstream status (2026-05-06)
+## Status (2026-05-08)
 
-Two pieces of evidence in the sibling `sw-cor24-snobol4` repo suggest
-the issue has been resolved:
+The blocker has shifted. The original primitives issue (snobol4#1)
+appears resolved at the source level. The live blocker is now
+**toolchain deployment**: there is no `snobol4` wrapper on PATH and
+no `snobol4.lgo` at `$TOOLROOT/../lib/cor24/`, so the SNOBOL4
+interpreter FTI-0 sits on top of cannot be invoked.
 
-1. **`docs/plan.md` line 499** says (past tense, in the "April 2026"
-   status section):
+### Source level: issue #1 appears fixed
 
+In `sw-cor24-snobol4`:
+
+1. `docs/plan.md` line 499 (April 2026 status section):
    > "SIZE / SUBSTR / CHAR builtins added (issue #1) ..."
+2. `src/sno_exec.plsw` line 1002+ contains a real `EXEC_BUILTIN`
+   proc with substantive `WHEN (X_OP = OP_SIZE / OP_SUBSTR / OP_CHAR)`
+   arms (not stubs).
 
-2. **`src/sno_exec.plsw` line 1002+** contains a real `EXEC_BUILTIN`
-   proc with substantive `WHEN (X_OP = OP_SIZE)`, `WHEN (X_OP = OP_SUBSTR)`,
-   and `WHEN (X_OP = OP_CHAR)` arms. These are not stubs:
+End-to-end verification is gated on deployment, below.
 
-   - `OP_SIZE` walks the string descriptor and returns the length as INT
-   - `OP_SUBSTR` takes (str, pos, len), copies into the string buffer,
-     handles boundary cases (pos<1 clamped to 1; pos>len clamped to end)
-   - `OP_CHAR` writes the given byte code into the string buffer as a
-     1-character string
+### Deployment is owned by a coordinator brief
 
-**What has NOT been verified:**
+The COR24 toolchain has consolidated onto a PATH-resolved model: each
+language layer ships as `<lang>.lgo` at `$TOOLROOT/../lib/cor24/`
+plus a one-line wrapper at `$TOOLROOT/<lang>` doing
+`exec cor24-emu --lgo <lgo> "$@"`. PL/SW is live (`pl-sw`,
+`plsw.lgo`); SNOBOL4 is not.
 
-- `build/snobol4.bin` does not exist on this host. `just build` (in the
-  sibling repo) has not been run.
-- `cor24-run` may or may not be installed and ready (it is a separate
-  toolchain dependency).
-- `normalize.sno` itself has not been written -- the saga's step 002
-  was closed in the blocked state and not retried after the upstream fix.
+The unblock is tracked at:
 
-So while the upstream surface looks fixed, end-to-end execution of a
-written normalizer against the new interpreter has not yet happened.
+- `/disk1/github/softwarewrighter/devgroup/tools/briefs/dcsno-bootstrap-snobol4-toolchain.md`
+  (owner: dcsno; branch: `pr/bootstrap-toolchain`)
+- Status per `tools/briefs/README.md` as of 2026-05-08: *"cleared,
+  placeholder branch only"* -- dcsno can start; nothing shipped yet.
+  The brief explicitly names dcftn as the downstream beneficiary
+  (line 83 of that brief).
 
-## Next steps to verify and unblock
+When dcsno ships and mike relays, mike installs the artifacts and
+dcftn is unblocked. No action in this repo will accelerate that.
 
-For an agent with permissions to interact with the sibling repos and
-GitHub:
+### What this repo has ready to verify
 
-1. Confirm `sw-embed/sw-cor24-snobol4#1` is closed on GitHub.
-2. Build the interpreter:
+Once `snobol4.lgo` is installed, three pieces wire up end-to-end
+with no further changes here:
+
+- `scripts/verify-snobol4.sh` -- runs the test fixture through the
+  interpreter, diffs against expected output, exit 0/1/2 for
+  pass/fail/blocked.
+- `snobol4/tests/builtins/` -- SIZE/SUBSTR/CHAR fixture mirroring
+  the upstream `test_builtins.sno`.
+- `scripts/fortran` -- user-facing `.f -> compiled output` wrapper.
+  Errors with a pointer to this doc when `snobol4.lgo` is missing.
+
+## Next steps once `snobol4` is on PATH
+
+When mike signals that the dcsno brief has shipped:
+
+1. Sanity-check the deployment from this repo:
    ```
-   cd <sibling>/sw-cor24-snobol4
-   just build
+   scripts/verify-snobol4.sh
    ```
-   Confirm `build/snobol4.bin` is produced.
-3. Sanity-check the new builtins with a small SNOBOL4 program that
-   exercises `SIZE`, `SUBSTR`, and `CHAR`. (See `examples/` in the
-   sibling repo for the existing program style.)
-4. Confirm `cor24-run` is available so `build/snobol4.bin` can actually
-   execute.
-5. In this repo, the saga is parked. Step 002 (implement-normalize) is
-   marked completed but its work was never landed (`snobol4/src/normalize.sno`
-   is still a stub). Step 004 (normalize-tests) is marked blocked.
-   The cleanest path forward:
-   - `agentrail reopen 2` and re-attempt the implementation
-   - then `agentrail reopen 4` and run the runner against the
-     fixtures already in `snobol4/tests/normalize/` (this session's
-     deliverable; see that directory's README.md)
-   - then proceed to step 005 (integrate-driver)
-
-   Alternatively, insert a fresh "retry-implement-normalize" step
-   between 003 and 004 with `agentrail insert --after 3 ...` if the
-   reopen path is undesirable.
+   Expect exit 0 and a one-line "OK" message. Exit 1 (FAIL) means the
+   deployed interpreter doesn't match what FTI-0 assumes -- file a
+   blocker on dcsno before touching anything else here.
+2. In `.agentrail/`, the saga is parked at step 005-normalize-tests
+   (formerly 004; renumbered when the verify-and-vendor step landed
+   in front of it). Step 002 (implement-normalize) is marked
+   completed but its work was never written -- `snobol4/src/normalize.sno`
+   is still a stub.
+   - `agentrail reopen 2` and re-attempt the implementation using
+     SIZE / SUBSTR / CHAR.
+   - When green, `agentrail reopen 5` (or 4, depending on numbering at
+     that time) and run the test runner against the fixtures already
+     authored in `snobol4/tests/normalize/`.
+   - Then proceed to integrate-driver and the remaining FTI-0
+     milestones (classify, expr, symbols/labels, lower, emit_plsw).
+3. The `.f -> .s` end-to-end smoke test, once the compiler exists, is
+   `scripts/fortran examples/hello.f`.
 
 ## Adjacent risks (might surface as new blockers)
 
@@ -140,15 +159,29 @@ Later FTI-0 milestones will need more of the SNOBOL4 surface:
 These are not currently blockers -- they are flagged so the next
 blocker discovery isn't a surprise.
 
-## Where this is tracked locally
+## Where this is tracked
+
+Upstream (the actual unblock):
+
+- `/disk1/github/softwarewrighter/devgroup/tools/briefs/dcsno-bootstrap-snobol4-toolchain.md`
+  -- the saga brief mike will hand to dcsno.
+- `/disk1/github/softwarewrighter/devgroup/tools/briefs/README.md`
+  -- the rolling status table; check here before assuming the blocker
+  is still live.
+
+In this repo:
 
 - `.agentrail/steps/002-implement-normalize/summary.md` -- original
-  blocker note
-- `.agentrail/steps/004-normalize-tests/summary.md` -- current
-  blocked-status note (set this session via `agentrail abort`)
-- `snobol4/tests/normalize/README.md` -- pointer in the test fixtures
-  directory
+  blocker note from the agent who first hit this
+- `.agentrail/steps/005-normalize-tests/summary.md` (or `004-...` if
+  renumbered) -- runner+verify step, blocked
+- `snobol4/tests/builtins/README.md` -- the SIZE/SUBSTR/CHAR
+  verification fixture authored this session
+- `snobol4/tests/normalize/README.md` -- the normalize-phase fixtures
+  authored in a prior session
+- `scripts/fortran` and `scripts/verify-snobol4.sh` -- the runtime
+  plumbing waiting on `snobol4.lgo`
 
-When the upstream is confirmed fixed and our saga is reopened, update
+When the deployment lands and FTI-0 actually runs end-to-end, update
 or replace this document with a "lessons learned" / postmortem note,
 or fold it into a milestone retrospective.

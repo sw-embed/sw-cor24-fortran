@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# fortran -- compile an FTI-0 .f source via the SNOBOL4-implemented compiler.
+#
+# Usage:
+#   fortran <input.f>            # emits PL/SW (or assembly) to stdout
+#   fortran --help
+#
+# Layered toolchain (build-time only; runtime is just cor24-emu):
+#
+#   .f source
+#     |
+#     |  cor24-emu --lgo <snobol4.lgo>
+#     |    --uart-file <our compiler.sno>
+#     |    -u "<.f source>"<EOT>
+#     v
+#   PL/SW or assembly text on UART output
+#
+# This wrapper assumes:
+#   1. cor24-emu is on PATH (devgroup default).
+#   2. snobol4.lgo is installed at $TOOLROOT/../lib/cor24/snobol4.lgo.
+#      Not yet deployed at the time this wrapper landed -- see
+#      docs/snobol4-blockers.md.
+#   3. The FTI-0 compiler source is at <repo>/snobol4/src/driver.sno.
+#      Currently a stub -- see the agentrail saga in .agentrail/.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+    sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
+    exit 0
+fi
+
+if [ $# -lt 1 ]; then
+    echo "fortran: error: expected one argument (an .f source file)" >&2
+    echo "Usage: fortran <input.f>" >&2
+    exit 2
+fi
+
+INPUT_F="$1"
+if [ ! -f "$INPUT_F" ]; then
+    echo "fortran: error: $INPUT_F not found." >&2
+    exit 1
+fi
+
+# Locate snobol4.lgo via TOOLROOT (devgroup convention) or by deriving
+# from pl-sw's install location (mirrors the pl-sw wrapper itself).
+if [ -z "${TOOLROOT:-}" ]; then
+    if PL_SW_PATH=$(command -v pl-sw 2>/dev/null); then
+        TOOLROOT="$(dirname "$PL_SW_PATH")"
+    fi
+fi
+
+if [ -z "${TOOLROOT:-}" ]; then
+    echo "fortran: error: TOOLROOT not set and pl-sw is not on PATH." >&2
+    echo "  Source the devgroup environment or export TOOLROOT to the dir" >&2
+    echo "  containing pl-sw / cor24-emu." >&2
+    exit 2
+fi
+
+LGO_DIR="$TOOLROOT/../lib/cor24"
+SNOBOL4_LGO="$LGO_DIR/snobol4.lgo"
+COMPILER_SNO="$REPO_DIR/snobol4/src/driver.sno"
+
+if [ ! -f "$SNOBOL4_LGO" ]; then
+    cat >&2 <<EOF
+fortran: error: $SNOBOL4_LGO not found.
+
+  The SNOBOL4 interpreter has not yet been built and installed at the
+  system path. The dcsno saga in sw-embed/sw-cor24-snobol4 is
+  responsible for producing snobol4.lgo and depositing it in
+  ${LGO_DIR}/.
+
+  See: docs/snobol4-blockers.md
+EOF
+    exit 1
+fi
+
+if [ ! -f "$COMPILER_SNO" ]; then
+    echo "fortran: error: $COMPILER_SNO not found." >&2
+    exit 1
+fi
+
+# Build UART input: the user's .f source, terminated with EOT (\x04).
+USER_SRC="$(cat "$INPUT_F")"
+
+exec cor24-emu \
+    --lgo "$SNOBOL4_LGO" \
+    --uart-file "$COMPILER_SNO" \
+    -u "${USER_SRC}"$'\x04' \
+    --speed 0 \
+    -n 1000000000 \
+    -t 600

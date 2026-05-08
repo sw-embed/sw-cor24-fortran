@@ -86,27 +86,51 @@ agentrail next            # Current step + context
 
 ## Toolchain
 
+All toolchain binaries are PATH-resolved from `$TOOLROOT` on the
+devgroup host. The "tower" is build-time only -- at runtime every
+layer is just `cor24-emu --lgo <some>.lgo` with appropriate UART
+input.
+
 | Tool | Purpose |
 |------|---------|
-| snobol4 | Interpreter to run the FORTRAN compiler SNOBOL4 source |
-| plsw | Transpiler: takes .plsw/.msw files and produces .s assembly |
-| `cor24-run` | COR24 assembler + emulator (downstream of PL/SW) |
+| `tc24r` | C -> COR24 `.s` |
+| `cor24-asm` | `.s` -> `.lgo` / `.bin` |
+| `cor24-emu` | run a `.lgo` |
+| `pl-sw` | wraps `cor24-emu --lgo plsw.lgo` |
+| `snobol4` | wraps `cor24-emu --lgo snobol4.lgo` (after dcsno's bootstrap brief ships) |
+| `cor24-run` | deprecated; slated for retirement (see `dc-migrate-toolchain.md`) |
 
 ### Build Pipeline
 
 ```
-snobol4/src/*.sno  --[snobol4 interpreter]-->  .msw/.plsw files  --[plsw]-->  .s assembly  --[cor24-run]-->  emulate on COR24
+input.f
+  -> scripts/fortran    (cor24-emu --lgo snobol4.lgo --uart-file driver.sno -u <input.f>)
+  -> .plsw / .msw       (emitted PL/SW)
+  -> pl-sw              (cor24-emu --lgo plsw.lgo)
+  -> .s
+  -> cor24-asm
+  -> .lgo
+  -> cor24-emu
 ```
 
-The FTI-0 compiler itself is a SNOBOL4 program. The SNOBOL4 interpreter runs the compiler, which reads .f source and emits PL/SW.
+The FTI-0 compiler itself is a SNOBOL4 program. The `snobol4` wrapper
+on PATH is the bottom of our build pipeline; `scripts/fortran` is our
+user-facing tool that wires the user's `.f` source through it. See
+`docs/tools.md` for full invocation details and
+`docs/snobol4-blockers.md` for the current deployment status of the
+`snobol4` wrapper.
 
 ### Toolchain Locations (this project validates these)
 
-- `sw-cor24-snobol4` -- SNOBOL4 interpreter
-- `sw-cor24-plsw` -- PL/SW compiler + linker
-- `sw-cor24-emulator` -- COR24 assembler and emulator (Rust)
+- `sw-cor24-snobol4` -- SNOBOL4 interpreter (built to `snobol4.lgo`)
+- `sw-cor24-plsw` -- PL/SW compiler + linker (built to `plsw.lgo`)
+- `sw-cor24-emulator` -- `cor24-emu` and `cor24-dbg`
+- `sw-cor24-x-assembler` -- `cor24-asm`
+- `sw-cor24-x-tinyc` -- `tc24r`
 
-All COR24 repos live under `~/github/sw-embed/` as siblings.
+All COR24 repos live under `~/github/sw-embed/` per `dc*` user, with
+shared deliverables installed at `$TOOLROOT` (`work/bin/`) and
+`work/lib/cor24/`.
 
 ## Repository Structure
 

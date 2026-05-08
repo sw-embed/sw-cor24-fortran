@@ -4,25 +4,50 @@ This document describes the tools used in the sw-cor24-fortran project.
 
 ## Core Toolchain
 
-| Tool | Purpose | Location |
-|------|---------|----------|
-| snobol4 | SNOBOL4 interpreter -- runs the FTI-0 compiler source | `sw-cor24-snobol4` |
-| plsw | PL/SW transpiler -- converts .plsw/.msw to .s assembly | `sw-cor24-plsw` |
-| cor24-run | COR24 assembler + emulator | `sw-cor24-emulator` |
+All toolchain binaries are PATH-resolved from `$TOOLROOT`
+(`/disk1/github/softwarewrighter/devgroup/work/bin/` on the devgroup
+host). No sibling-clone setup is required to invoke them.
 
-All COR24 repos live under `~/github/sw-embed/` as siblings.
+| Tool | Purpose | Source repo |
+|------|---------|-------------|
+| `tc24r` | C -> COR24 `.s` | sw-cor24-x-tinyc |
+| `cor24-asm` | `.s` -> `.lgo` / `.bin` / `.lst` (with optional `--base-addr`) | sw-cor24-x-assembler |
+| `cor24-emu` | run `.lgo`; load raw bytes via `--load-binary` | sw-cor24-emulator |
+| `cor24-dbg` | debug `.lgo` | sw-cor24-emulator |
+| `link24`, `meta-gen` | PL/SW separate-compilation linker | sw-cor24-plsw |
+| `pl-sw` | wraps `cor24-emu --lgo plsw.lgo` | sw-cor24-plsw |
+| `snobol4` | wraps `cor24-emu --lgo snobol4.lgo` (after the dcsno bootstrap brief ships -- see `docs/snobol4-blockers.md`) | sw-cor24-snobol4 |
 
-## SNOBOL4 Interpreter
+The deprecated `cor24-run` (with its `--run` and `--assemble`
+sub-flags) still exists in transition but is slated for retirement;
+new code uses `cor24-asm` + `cor24-emu` per the
+`dc-migrate-toolchain.md` brief mapping.
 
-The FTI-0 compiler is a SNOBOL4 program. The SNOBOL4 interpreter runs it.
+## Compiling FTI-0 source
+
+The FTI-0 compiler is a SNOBOL4 program. To run it on a `.f` source,
+use the project wrapper which slots the user's `.f` through
+`cor24-emu --lgo snobol4.lgo` with our compiler's `.sno` as the
+program:
 
 ```bash
-# Run the FTI-0 compiler on a source file
-snobol4 snobol4/src/driver.sno < input.f
+# Compile a .f source (output to stdout)
+scripts/fortran examples/hello.f
+```
 
-# Run with dump modes (when implemented)
-snobol4 snobol4/src/driver.sno -dump-lines < input.f
-snobol4 snobol4/src/driver.sno -dump-statements < input.f
+`scripts/fortran` resolves `snobol4.lgo` via `$TOOLROOT/../lib/cor24/`
+(or by deriving from `pl-sw`'s install dir if `$TOOLROOT` is unset).
+It errors with a clear pointer when the SNOBOL4 deployment is missing
+-- see `docs/snobol4-blockers.md`.
+
+To exercise the deployed SNOBOL4 interpreter alone (independent of
+FTI-0), pass a `.sno` program directly:
+
+```bash
+cor24-emu --lgo $TOOLROOT/../lib/cor24/snobol4.lgo \
+          --uart-file your-program.sno \
+          -u "$(printf 'input data\x04')" \
+          --speed 0 -n 100000000
 ```
 
 ### SNOBOL4 Key Features Used
@@ -32,28 +57,40 @@ snobol4 snobol4/src/driver.sno -dump-statements < input.f
 - String processing for tokenization and emission
 - Pattern-driven statement classification
 
-## PL/SW Transpiler
+## PL/SW Compiler
 
-Converts emitted PL/SW files to COR24 assembly.
+Converts PL/SW source to COR24 assembly. Use the `pl-sw` wrapper
+(it wraps `cor24-emu --lgo plsw.lgo`):
 
 ```bash
-# Transpile a single PL/SW file
-plsw output.msw
-
-# Transpile with linking
-plsw main.msw runtime.msw
+# Compile a single .plsw file (assembly to stdout)
+pl-sw -u "$(cat input.plsw)"$'\x04' --speed 0 -n 200000000 > output.s
 ```
 
-## COR24 Emulator
+For multi-file .plsw with includes, see `sw-cor24-plsw/scripts/pipeline.sh`
+for the `FILE:` / `SOURCE:` UART framing protocol.
 
-Assembles and emulates COR24 machine code.
+Then assemble:
 
 ```bash
-# Assemble and run
-cor24-run program.s
+cor24-asm output.s -o output.lgo
+```
 
-# Assemble only
-cor24-run --assemble program.s -o program.bin
+## COR24 Assembler and Emulator
+
+Assemble `.s` -> `.lgo` / `.bin`:
+
+```bash
+cor24-asm program.s -o program.lgo
+cor24-asm program.s --bin program.bin --listing program.lst
+```
+
+Run a `.lgo`:
+
+```bash
+cor24-emu --lgo program.lgo --speed 0
+cor24-emu --lgo program.lgo --terminal --echo            # interactive
+cor24-emu --lgo program.lgo -u "$(cat input)"            # UART input
 ```
 
 ## Development Helpers
@@ -94,16 +131,19 @@ When working with a new COR24 repo:
 
 ## Build Pipeline
 
-The full pipeline from FORTRAN source to execution:
+The full pipeline from FORTRAN source to execution on COR24:
 
 ```
-.f source
-  -> [snobol4 interpreter runs driver.sno]
-  -> .msw/.plsw files (emitted PL/SW)
-  -> [plsw transpiler]
-  -> .s assembly
-  -> [cor24-run assembler+emulator]
-  -> execution on COR24
+input.f                 (FTI-0 source)
+  -> scripts/fortran    (cor24-emu --lgo snobol4.lgo --uart-file driver.sno -u <input.f>)
+  -> .plsw / .msw       (emitted PL/SW)
+  -> pl-sw              (cor24-emu --lgo plsw.lgo)
+  -> .s                 (COR24 assembly)
+  -> cor24-asm          (assembler)
+  -> .lgo               (COR24 image)
+  -> cor24-emu          (run on the emulator)
 ```
 
-Each stage can be tested independently.
+Each stage can be tested independently. At runtime, every layer is
+just `cor24-emu --lgo <some>.lgo` with appropriate UART input -- the
+"tower" is purely a build-time dependency graph.
