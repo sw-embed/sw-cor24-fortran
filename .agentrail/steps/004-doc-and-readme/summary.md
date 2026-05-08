@@ -1,0 +1,1 @@
+Added README 'Live demo' section pointing at the Path A pipeline, regression test, and parallel-compiler context. Updated docs/snobol4-blockers.md with a '2026-05-08, late' status noting dcsno's ship + the new dcemu/FTI-0 blocker pair. markdown-checker passes on both files.
