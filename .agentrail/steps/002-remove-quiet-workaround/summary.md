@@ -1,0 +1,1 @@
+Removed the temporary grep -v '^Loaded ' filter from scripts/verify-snobol4.sh. dcemu's cor24-emu --quiet classification fix is live (binary timestamp 17:22:53); stdout is now clean program output, stderr carries logs. Script still exits 0 'OK'.

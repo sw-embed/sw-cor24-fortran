@@ -1,0 +1,12 @@
+number = 1
+slug = "fix-verify-snobol4"
+status = "completed"
+description = """
+Rewrite scripts/verify-snobol4.sh to use the canonical SNOBOL4
+invocation pat..."""
+role = "production"
+context_files = []
+created_at = "2026-05-08T17:11:54"
+completed_at = "2026-05-08T17:13:41"
+task_type = "fix"
+commits = ["c2e2fd8aafc85158581503171d4ec86577f26fe2"]

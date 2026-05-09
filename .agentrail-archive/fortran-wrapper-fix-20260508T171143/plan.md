@@ -1,0 +1,1 @@
+Embed examples/hello.s content as a heredoc inside scripts/fortran so the wrapper is self-contained and works when installed at $TOOLROOT/ (not just from the repo). Single step.
