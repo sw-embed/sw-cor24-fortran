@@ -1,0 +1,12 @@
+number = 3
+slug = "write-test-normalize-runner"
+status = "completed"
+description = """
+Author scripts/test-normalize.sh. The runner exercises the canonical
+pattern:..."""
+role = "production"
+context_files = []
+created_at = "2026-05-08T17:32:20"
+completed_at = "2026-05-08T17:34:32"
+task_type = "implement"
+commits = ["2bc50a53b836fc082556bdbf2ea133560af8d9e5"]

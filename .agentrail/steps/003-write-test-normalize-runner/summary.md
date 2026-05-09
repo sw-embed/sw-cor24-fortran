@@ -1,0 +1,1 @@
+Authored scripts/test-normalize.sh. Iterates fixtures, runs canonical SNOBOL4 invocation, diffs UART TX against .expected. Per-fixture PASS/FAIL with diff, summary, exit 0/1/2. Smoke test: 0/8 pass against draft normalize.sno -- runner correctly surfaces the bugs (each fixture emits one uppercased comment line then loops to instruction limit). Real signal for step 004.
