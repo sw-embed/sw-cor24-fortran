@@ -1,6 +1,6 @@
-name = "fortran-hello-world"
+name = "fortran-wrapper-fix"
 status = "completed"
-current_step = 4
-created_at = "2026-05-08T14:20:35"
+current_step = 1
+created_at = "2026-05-08T16:37:44"
 plan_file = ".agentrail/plan.md"
 retroactive = false

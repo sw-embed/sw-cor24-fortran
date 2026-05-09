@@ -1,0 +1,1 @@
+Replace the file-based 'cat $REPO_DIR/examples/hello.s' in scripts/fortran with an inline heredoc containing the same bytes. Verify: scripts/fortran examples/hello.f produces identical output to the file; cp scripts/fortran /tmp/foo && /tmp/foo examples/hello.f works (simulating PATH install); scripts/test-hello.sh still passes.
