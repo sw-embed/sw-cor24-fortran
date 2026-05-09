@@ -1,11 +1,7 @@
 *       FTI-0 Source Normalizer  --  snobol4/src/normalize.sno
 *
-*       Status: DRAFT (unverified). The dcsno bootstrap brief
-*       (snobol4.lgo deployment) has not yet shipped, so we cannot
-*       run normalize.sno against snobol4/tests/normalize/ fixtures.
-*       See docs/snobol4-blockers.md for the deployment status.
-*
-*       Reads fixed-form .f source via INPUT and emits one normalized
+*       Reads fixed-form .f source via RAWINPUT (case-preserving;
+*       loaded at INP_LOAD_ADDR = 0x090000) and emits one normalized
 *       statement record per logical statement:
 *               stmt<N> line=<M> label=<L> text=<text>
 *
@@ -24,17 +20,31 @@
 *       - cols 7-72 = statement text (rstripped); chars beyond col 72
 *         are ignored by construction (we only extract 66 chars)
 *
-*       Uses only the SIZE / SUBSTR / CHAR builtins that snobol4#1
-*       made available; nothing else from the SNOBOL4 surface that
-*       might still be incomplete in the deployed interpreter.
+*       Workaround: tools/briefs/dcsno-funcall-arithmetic.md
+*       Function-call results in arithmetic / nested-call args
+*       currently return 0 / empty (the dialect bug filed as
+*       dcsno-funcall-arithmetic.md). Wherever this code would
+*       naturally write SUBSTR(X, 1, SIZE(X) - 1) or
+*       SUBSTR(X, SIZE(X), 1), we extract the SIZE result to a temp
+*       first, do arithmetic on the temp, then call SUBSTR with the
+*       temp. Sites are marked  * XXX dcsno-funcall-arithmetic
+*       so they can be reverted to the natural inline form once the
+*       fix lands.
 *
 *       State variables:
 *         STMT  -- emitted-statement counter (1-based)
 *         LNUM  -- physical-line counter (1-based)
 *         AT    -- accumulator: text of in-progress logical statement
 *         AL    -- accumulator: label of in-progress logical statement
-*         ALN   -- accumulator: starting physical line of in-progress
-*                  logical statement
+*         ALN   -- accumulator: starting physical line
+*         L     -- current physical line (just-read)
+*         LR    -- raw label field (cols 1-5 of L)
+*         C6    -- continuation char (col 6 of L)
+*         TR    -- raw text field (cols 7-72 of L)
+*         TXT   -- rstripped TR
+*         LBL   -- lstripped + rstripped LR
+*         SZ    -- temp: holds SIZE result before arith / nested use
+*         CH    -- temp: holds a single-char SUBSTR result
 
         STMT = 0
         LNUM = 0
@@ -43,10 +53,11 @@
         ALN  = 0
 
 *       === Main loop: read one physical line per iteration. ===
-RD      L = INPUT                               :F(FL)
+RD      L = RAWINPUT                            :F(FL)
         LNUM = LNUM + 1
 
 *       Comment line? (col 1 == 'C' or '*')  Skip.
+*       (predicate-with-nested-arg + goto works post pr/nested-call-drops-gotos)
         IDENT(SUBSTR(L, 1, 1), 'C')             :S(RD)
         IDENT(SUBSTR(L, 1, 1), '*')             :S(RD)
 
@@ -55,24 +66,36 @@ RD      L = INPUT                               :F(FL)
         C6 = SUBSTR(L, 6, 1)
         TR = SUBSTR(L, 7, 66)
 
-*       Right-trim TR into TXT (drop trailing spaces from cols 7-72).
+*       Right-trim TR into TXT.
         TXT = TR
 RT      EQ(SIZE(TXT), 0)                        :S(RTD)
-        IDENT(SUBSTR(TXT, SIZE(TXT), 1), ' ')   :F(RTD)
-        TXT = SUBSTR(TXT, 1, SIZE(TXT) - 1)
+*       XXX dcsno-funcall-arithmetic: extract SIZE for SUBSTR-arg + arith
+        SZ = SIZE(TXT)
+        CH = SUBSTR(TXT, SZ, 1)
+        IDENT(CH, ' ')                          :F(RTD)
+        SZ = SZ - 1
+        TXT = SUBSTR(TXT, 1, SZ)
         :(RT)
 RTD
 
-*       Left-trim then right-trim LR into LBL (so a label like '  25 '
-*       reduces to '25').
+*       Left-trim LR into LBL (drop leading spaces).
         LBL = LR
 LT      EQ(SIZE(LBL), 0)                        :S(LTD)
         IDENT(SUBSTR(LBL, 1, 1), ' ')           :F(LTD)
-        LBL = SUBSTR(LBL, 2, SIZE(LBL) - 1)
+*       XXX dcsno-funcall-arithmetic: extract SIZE before arith
+        SZ = SIZE(LBL)
+        SZ = SZ - 1
+        LBL = SUBSTR(LBL, 2, SZ)
         :(LT)
+
+*       Right-trim LBL (drop trailing spaces).
 LTD     EQ(SIZE(LBL), 0)                        :S(LBLD)
-        IDENT(SUBSTR(LBL, SIZE(LBL), 1), ' ')   :F(LBLD)
-        LBL = SUBSTR(LBL, 1, SIZE(LBL) - 1)
+*       XXX dcsno-funcall-arithmetic: extract SIZE for SUBSTR-arg + arith
+        SZ = SIZE(LBL)
+        CH = SUBSTR(LBL, SZ, 1)
+        IDENT(CH, ' ')                          :F(LBLD)
+        SZ = SZ - 1
+        LBL = SUBSTR(LBL, 1, SZ)
         :(LTD)
 LBLD
 
