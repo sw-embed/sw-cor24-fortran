@@ -3,18 +3,19 @@
 # fixture in snobol4/tests/normalize/ and diff the captured UART
 # output against the matching .expected file.
 #
-# Canonical invocation (post-dcsno-bootstrap + dcemu --quiet fix):
+# Canonical dcsno invocation (post-bootstrap + dcemu fixes):
 #
-#     snobol4 --load-binary snobol4/src/normalize.sno@0x080000 \
-#             --entry 0 --uart-file <fixture>.f --quiet \
-#             --speed 0 -n 100000000 -t 60
+#     snobol4 --load-binary <prog>.sno@0x080000 \
+#             --load-binary <data>@0x090000 \
+#             --entry 0 --quiet --speed 0 -n 100000000 -t 60
 #
-# - The compiler-phase source is delivered to memory at 0x080000
-#   (where the SNOBOL4 interpreter looks for its program).
-# - The fixture .f is delivered via UART RX (where the SNOBOL4
-#   program reads it via INPUT, line by line).
-# - --quiet sends program UART TX to stdout; logs (loader, executed
-#   counts) go to stderr.
+# - 0x080000 = INP_PROG_ADDR (the SNOBOL4 program source).
+# - 0x090000 = INP_LOAD_ADDR (the runtime data file the program
+#   reads via INPUT/RAWINPUT). When data is loaded here, the
+#   interpreter sets INP_TTY=0 and runs in batch mode -- no
+#   line-echo, no live UART_GETCHAR.
+# - --quiet sends program UART TX to stdout; loader / executed
+#   counts go to stderr.
 #
 # Exit codes:
 #   0 -- all fixtures pass
@@ -67,8 +68,8 @@ for fixture in "${fixtures[@]}"; do
     fi
 
     actual=$(snobol4 --load-binary "$NORMALIZE_SNO@0x080000" \
+                     --load-binary "$fixture@0x090000" \
                      --entry 0 \
-                     --uart-file "$fixture" \
                      --quiet --speed 0 -n 100000000 -t 60 2>/dev/null)
 
     if printf '%s\n' "$actual" | diff -u "$expected" - >"$WORK/${name}.diff"; then
