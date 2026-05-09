@@ -1,0 +1,11 @@
+{
+  "task_type": "implement",
+  "state": {
+    "number": 2,
+    "step": "implement-normalize"
+  },
+  "action": "Blocked: SNOBOL4 missing SIZE/SUBSTR/CHAR -- issue sw-embed/sw-cor24-snobol4#1",
+  "result": "failure: SNOBOL4 missing SIZE/SUBSTR/CHAR builtins",
+  "reward": -1,
+  "timestamp": "2026-04-09T19:16:19"
+}

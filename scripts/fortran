@@ -1,0 +1,196 @@
+#!/usr/bin/env bash
+# fortran -- compile an FTI-0 .f source to COR24 assembly.
+#
+# Usage:
+#   fortran <input.f>            # writes COR24 assembly to stdout
+#   fortran --help
+#
+# CURRENT STATUS: Path A only.
+#
+# This wrapper is a Path-A fixture per
+#   tools/briefs/dcftn-fortran-hello-world.md
+# It short-circuits for the canonical Hello-World source
+#   examples/hello.f
+# by emitting the pre-baked
+#   examples/hello.s
+# on stdout. Any other input errors out -- the full FTI-0 compiler
+# (the SNOBOL4-based pipeline that consumes arbitrary .f sources)
+# is a separate parallel effort tracked under the milestone-1
+# saga (currently archived behind the dcemu --lgo + --uart-file
+# bug; see docs/snobol4-blockers.md).
+#
+# When the full compiler is ready, this wrapper will grow a Path B
+# branch that invokes
+#   cor24-emu --lgo $TOOLROOT/../lib/cor24/snobol4.lgo \
+#             --uart-file <our compiler.sno> \
+#             -u "$(cat <input.f>)"<EOT>
+# instead.
+#
+# End-to-end pipeline (Path A):
+#
+#   scripts/fortran examples/hello.f > /tmp/hello.s
+#   cor24-asm /tmp/hello.s -o /tmp/hello.lgo
+#   cor24-emu --lgo /tmp/hello.lgo --quiet --speed 0 -n 1000000
+#       => prints "Hello, World!\n", exit 0
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+    sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
+    exit 0
+fi
+
+if [ $# -lt 1 ]; then
+    echo "fortran: error: expected one argument (an .f source file)" >&2
+    echo "Usage: fortran <input.f>" >&2
+    exit 2
+fi
+
+INPUT_F="$1"
+if [ ! -f "$INPUT_F" ]; then
+    echo "fortran: error: $INPUT_F not found." >&2
+    exit 1
+fi
+
+INPUT_BASENAME="$(basename "$INPUT_F")"
+
+# Path A short-circuit: hello.f -> pre-baked hello.s.
+#
+# The heredoc below is the canonical source. examples/hello.s in the
+# repo carries the same bytes for human reference and is exercised by
+# scripts/test-hello.sh end-to-end, so divergence is caught.
+#
+# The wrapper is self-contained: no file lookup at runtime, so it
+# works identically whether invoked as ./scripts/fortran (from the
+# repo) or as $TOOLROOT/fortran (system-installed by mike).
+if [ "$INPUT_BASENAME" = "hello.f" ]; then
+    cat <<'HELLO_S_EOF'
+; COR24 assembly: prints "Hello, World!\n" via UART and halts.
+;
+; This is a Path-A fixture per
+;   tools/briefs/dcftn-fortran-hello-world.md
+; The full FTI-0 compiler isn't ready to emit this from
+;   examples/hello.f
+; yet; see docs/snobol4-blockers.md for the upstream gate. Until
+; then, scripts/fortran short-circuits hello.f to this prebaked .s.
+;
+; Structure adapted from the tc24r demo
+;   sw-cor24-x-tinyc/demos/hello.s
+; (proven working under cor24-asm + cor24-emu). The only change is
+; the byte sequence in _S0: "Hello, World!\n\0" instead of
+; "Hello, COR24!\n\0".
+
+.text
+
+        .globl  _start
+_start:
+        la      r0,_main
+        jal     r1,(r0)
+_halt:
+        bra     _halt
+
+        .globl  _putc
+_putc:
+        push    fp
+        push    r2
+        push    r1
+        mov     fp,sp
+L1:
+        la      r0,16711937
+        lbu     r0,0(r0)
+        push    r0
+        la      r0,128
+        mov     r1,r0
+        pop     r0
+        and     r0,r1
+        ceq     r0,z
+        brt     L2
+        bra     L1
+L2:
+        lw      r0,9(fp)
+        push    r0
+        la      r0,16711936
+        mov     r1,r0
+        pop     r0
+        sb      r0,0(r1)
+L0:
+        mov     sp,fp
+        pop     r1
+        pop     r2
+        pop     fp
+        jmp     (r1)
+
+        .globl  _puts
+_puts:
+        push    fp
+        push    r2
+        push    r1
+        mov     fp,sp
+L4:
+        lw      r0,9(fp)
+        lbu     r0,0(r0)
+        ceq     r0,z
+        brt     L5
+        lw      r0,9(fp)
+        lbu     r0,0(r0)
+        push    r0
+        la      r0,_putc
+        jal     r1,(r0)
+        add     sp,3
+        lw      r0,9(fp)
+        push    r0
+        lc      r0,1
+        mov     r1,r0
+        pop     r0
+        add     r0,r1
+        sw      r0,9(fp)
+        bra     L4
+L5:
+L3:
+        mov     sp,fp
+        pop     r1
+        pop     r2
+        pop     fp
+        jmp     (r1)
+
+        .globl  _main
+_main:
+        push    fp
+        push    r2
+        push    r1
+        mov     fp,sp
+        la      r0,_S0
+        push    r0
+        la      r0,_puts
+        jal     r1,(r0)
+        add     sp,3
+        lc      r0,0
+        bra     L6
+L6:
+        mov     sp,fp
+        pop     r1
+        pop     r2
+        pop     fp
+        jmp     (r1)
+
+        .data
+_S0:
+        ; "Hello, World!\n\0" -- 15 bytes
+        .byte   72,101,108,108,111,44,32,87,111,114,108,100,33,10,0
+HELLO_S_EOF
+    exit 0
+fi
+
+# Path B is not implemented yet.
+cat >&2 <<EOF
+fortran: error: only hello.f is supported in the current Path-A
+short-circuit. Input '$INPUT_BASENAME' would require the full FTI-0
+compiler, which is a separate parallel effort.
+
+  See: docs/snobol4-blockers.md
+       tools/briefs/dcftn-fortran-hello-world.md
+EOF
+exit 1

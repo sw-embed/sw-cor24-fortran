@@ -1,0 +1,11 @@
+{
+  "task_type": "debug",
+  "state": {
+    "number": 4,
+    "step": "debug-normalize-against-fixtures"
+  },
+  "action": "Refactored normalize.sno: SZ temp for SIZE results, CH temp for SUBSTR results in non-predicate contexts. Three rstrip/lstrip/trim-label loops rewritten. Comment skip and predicate-with-nested+goto patterns left untouched (those work post pr/nested-call-drops-gotos).",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-05-09T15:17:40"
+}

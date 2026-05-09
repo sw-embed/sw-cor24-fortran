@@ -36,6 +36,30 @@ The project is intentionally staged:
 4. emit readable PL/SW
 5. later revisit floating point and richer FORTRAN features
 
+## Live demo: hello world
+
+A working `Hello, World!` end-to-end demo is live, even though the
+full FTI-0 compiler is still under construction:
+
+```
+scripts/fortran examples/hello.f > /tmp/hello.s
+cor24-asm /tmp/hello.s -o /tmp/hello.lgo
+cor24-emu --lgo /tmp/hello.lgo --quiet --speed 0
+# prints "Hello, World!"
+```
+
+For now, `scripts/fortran` short-circuits `examples/hello.f` to a
+hand-written `examples/hello.s` (Path A per
+[`tools/briefs/dcftn-fortran-hello-world.md`](file:///disk1/github/softwarewrighter/devgroup/tools/briefs/dcftn-fortran-hello-world.md)).
+The pre-built [`examples/hello.lgo`](examples/hello.lgo) is the demo
+deliverable that the dwftn web frontend will embed.
+
+Run `scripts/test-hello.sh` to regression-check the pipeline.
+
+The full FTI-0 compiler (the SNOBOL4-based pipeline that consumes
+arbitrary `.f` sources) is a separate parallel effort -- see
+[`docs/snobol4-blockers.md`](docs/snobol4-blockers.md) for status.
+
 ## Status
 
 This repository currently defines:
@@ -45,16 +69,17 @@ This repository currently defines:
 - the compiler architecture
 - the PL/SW mapping contract
 - the milestone plan
+- a Path-A hello-world fixture (`examples/hello.s` + `examples/hello.lgo`)
 
 Compiler implementation is expected to begin with source normalization and statement classification.
 
 ## Repository structure
 
-- `docs/` — product, architecture, design, plan, subset definition
-- `snobol4/` — compiler source and tests
-- `examples/` — sample FTI-0 input programs
-- `plsw/` — runtime helpers and generated output
-- `scripts/` — development helpers
+- `docs/` -- product, architecture, design, plan, subset definition
+- `snobol4/` -- compiler source and tests
+- `examples/` -- sample FTI-0 input programs
+- `plsw/` -- runtime helpers and generated output
+- `scripts/` -- development helpers
 
 ## First milestone
 

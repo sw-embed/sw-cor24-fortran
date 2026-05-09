@@ -1,0 +1,11 @@
+{
+  "task_type": "fix",
+  "state": {
+    "number": 1,
+    "step": "embed-hello-s-heredoc"
+  },
+  "action": "Replaced $REPO_DIR/examples/hello.s file-cat in scripts/fortran with an inline heredoc carrying the same bytes. Wrapper is now self-contained and works from any install location. Verified: from-repo output matches examples/hello.s byte-for-byte; cp-to-/tmp invocation also matches (simulating PATH install); scripts/test-hello.sh OK; negative test (sum10.f) still errors cleanly.",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-05-08T16:39:12"
+}

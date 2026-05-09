@@ -1,9 +1,24 @@
-Milestone 1: Source Normalization
+Resume milestone-1 source-normalization work, now that:
+- dcsno has shipped snobol4.lgo (and snobol4 wrapper on PATH)
+- dcemu has shipped the --lgo + --load-binary fix (verified 2026-05-08)
+- the canonical pattern works: snobol4 --load-binary <prog>.sno@0x080000 --entry 0
 
-Create the repo skeleton and implement the FTI-0 source normalizer.
+Original plan from milestone-1-source-normalization (now archived under
+.agentrail-archive/) ran into the dcemu bug + uncertain deployment state
+and pivoted into the Path-A short-circuit fortran-hello-world saga. That
+saga shipped a hand-written hello.lgo demo for dwftn but didn't dogfood
+the SNOBOL4-based compiler at all. This saga resumes the real work.
 
 Steps:
-1. create-repo-skeleton - Create snobol4/src/ with empty .sno placeholder files, examples/ with sample .f files, plsw/runtime/ and plsw/generated/ directories, snobol4/tests/ directories
-2. implement-normalize - Implement normalize.sno: read fixed-form .f source, detect comments (C or * in col 1), extract label field (cols 1-5), detect continuation (col 6), assemble logical statements from continued lines, preserve source line mapping, produce normalized statement records
-3. normalize-tests - Create golden-file tests for normalize.sno covering: comments, labels, continuation lines, blank lines, column rules (ignore beyond col 72), multi-line statements, source line mapping
-4. integrate-driver - Wire normalize.sno into driver.sno with -dump-lines output mode, verify end-to-end from .f input to normalized statement listing
+1. fix-verify-snobol4 -- rewrite scripts/verify-snobol4.sh to use the
+   canonical `snobol4 --load-binary X@0x080000 --entry 0 --quiet` pattern
+   (no --uart-file misuse). Confirm it flips from BLOCKED to OK against
+   the deployed interpreter.
+2. write-test-normalize-runner -- author scripts/test-normalize.sh that
+   runs normalize.sno against each .f fixture and diffs UART output vs
+   the .expected file. Smoke-test the runner on a trivial .sno first.
+3. debug-normalize-against-fixtures -- point the runner at the draft
+   snobol4/src/normalize.sno. Watch fixtures fail. Read each failure
+   honestly, fix the SNOBOL4 source, repeat until all 8 are green.
+4. (followups for separate sagas: classify, expr, symbols/labels,
+   lower, emit_plsw, integrate-driver -- each its own saga)

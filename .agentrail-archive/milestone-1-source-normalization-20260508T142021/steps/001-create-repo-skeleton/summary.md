@@ -1,0 +1,1 @@
+Created repo skeleton: snobol4/src/ with 9 phase stub .sno files, snobol4/tests/ with 5 test subdirs, examples/ with 4 fixed-form .f programs (hello, sum10, goto1, array1), plsw/runtime/fti0_runtime.msw placeholder, and plsw/generated/ directory. All files committed and pushed.
