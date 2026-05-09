@@ -45,13 +45,8 @@ if [ ! -f "$TEST_SNO" ] || [ ! -f "$EXPECTED" ]; then
     exit 2
 fi
 
-# cor24-emu --quiet promises "UART TX on stdout; logs to stderr" but
-# leaks `Loaded N bytes from ...` lines onto stdout. Strip them so the
-# captured output is just the SNOBOL4 program's UART TX. Worth a small
-# follow-up brief to dcemu about classifying loader messages as logs.
 ACTUAL=$(snobol4 --load-binary "$TEST_SNO@0x080000" --entry 0 \
-                 --quiet --speed 0 -n 100000000 -t 60 2>/dev/null \
-         | grep -v '^Loaded ')
+                 --quiet --speed 0 -n 100000000 -t 60 2>/dev/null)
 
 DIFF_OUT=$(mktemp)
 trap 'rm -f "$DIFF_OUT"' EXIT
