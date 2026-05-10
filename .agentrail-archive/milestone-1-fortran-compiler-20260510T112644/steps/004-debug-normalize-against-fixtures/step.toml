@@ -1,0 +1,12 @@
+number = 4
+slug = "debug-normalize-against-fixtures"
+status = "completed"
+description = """
+Run scripts/test-normalize.sh against the draft normalize.sno, read
+each fail..."""
+role = "production"
+context_files = []
+created_at = "2026-05-08T17:40:51"
+completed_at = "2026-05-09T15:17:40"
+task_type = "debug"
+commits = ["86830eca2957ffa5f054b8b4fbe6db99b30692c7"]
