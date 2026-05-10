@@ -1,6 +1,6 @@
-name = "m1-revert-funcall-workaround"
+name = "milestone-2-classify"
 status = "completed"
-current_step = 1
-created_at = "2026-05-10T11:26:44"
+current_step = 2
+created_at = "2026-05-10T11:13:23"
 plan_file = ".agentrail/plan.md"
 retroactive = false

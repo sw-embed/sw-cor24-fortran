@@ -1,0 +1,13 @@
+number = 2
+slug = "fixtures-and-runner"
+status = "completed"
+description = """
+Author golden-test fixtures and runner for classify.sno.
+
+Layout under snobol..."""
+role = "production"
+context_files = []
+created_at = "2026-05-10T11:20:01"
+completed_at = "2026-05-10T11:25:24"
+task_type = "implement"
+commits = ["d68e55640d3adfbc68f15f563725dc5b4a3b5238"]
