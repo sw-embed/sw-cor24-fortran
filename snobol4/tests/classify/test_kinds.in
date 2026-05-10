@@ -1,0 +1,12 @@
+stmt1 line=1 label= text=PROGRAM TEST
+stmt2 line=2 label= text=INTEGER I
+stmt3 line=3 label= text=DIMENSION A(10)
+stmt4 line=4 label= text=I = 0
+stmt5 line=5 label= text=GOTO 100
+stmt6 line=6 label= text=IF (I) GOTO 200
+stmt7 line=7 label= text=DO 100 I = 1, 10
+stmt8 line=8 label=100 text=CONTINUE
+stmt9 line=9 label= text=PRINT *, I
+stmt10 line=10 label= text=READ *, I
+stmt11 line=11 label= text=STOP
+stmt12 line=12 label= text=END
