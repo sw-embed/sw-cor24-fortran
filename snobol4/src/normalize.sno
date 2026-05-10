@@ -20,16 +20,20 @@
 *       - cols 7-72 = statement text (rstripped); chars beyond col 72
 *         are ignored by construction (we only extract 66 chars)
 *
-*       Workaround: tools/briefs/dcsno-funcall-arithmetic.md
-*       Function-call results in arithmetic / nested-call args
-*       currently return 0 / empty (the dialect bug filed as
-*       dcsno-funcall-arithmetic.md). Wherever this code would
-*       naturally write SUBSTR(X, 1, SIZE(X) - 1) or
-*       SUBSTR(X, SIZE(X), 1), we extract the SIZE result to a temp
-*       first, do arithmetic on the temp, then call SUBSTR with the
-*       temp. Sites are marked  * XXX dcsno-funcall-arithmetic
-*       so they can be reverted to the natural inline form once the
-*       fix lands.
+*       Toolchain history:
+*       1. dcsno-funcall-arithmetic.md fixed standalone arithmetic
+*          on function-call results, plus the bare nested-arg form
+*          SUBSTR(X, SIZE(X), 1). The SUBSTR-with-arith expressions
+*          below (SUBSTR(X, 1, SIZE(X) - 1)) work inline.
+*       2. A residual double-nesting bug remains in this build
+*          (snobol4.lgo 8756d420...): the pattern
+*          PREDICATE(SUBSTR(X, SIZE(X), 1), Y) -- a predicate whose
+*          nested SUBSTR has SIZE as its OWN nested arg -- always
+*          fires both :S and :F regardless of actual values. The two
+*          right-trim loops below carry a one-line workaround
+*          (extract SIZE to N first) for that case. Marked with
+*          * XXX dcsno-ident-double-nested-arg so they can be
+*          reverted when the follow-up fix lands.
 *
 *       State variables:
 *         STMT  -- emitted-statement counter (1-based)
@@ -43,8 +47,6 @@
 *         TR    -- raw text field (cols 7-72 of L)
 *         TXT   -- rstripped TR
 *         LBL   -- lstripped + rstripped LR
-*         SZ    -- temp: holds SIZE result before arith / nested use
-*         CH    -- temp: holds a single-char SUBSTR result
 
         STMT = 0
         LNUM = 0
@@ -57,7 +59,6 @@ RD      L = RAWINPUT                            :F(FL)
         LNUM = LNUM + 1
 
 *       Comment line? (col 1 == 'C' or '*')  Skip.
-*       (predicate-with-nested-arg + goto works post pr/nested-call-drops-gotos)
         IDENT(SUBSTR(L, 1, 1), 'C')             :S(RD)
         IDENT(SUBSTR(L, 1, 1), '*')             :S(RD)
 
@@ -66,15 +67,13 @@ RD      L = RAWINPUT                            :F(FL)
         C6 = SUBSTR(L, 6, 1)
         TR = SUBSTR(L, 7, 66)
 
-*       Right-trim TR into TXT.
+*       Right-trim TR into TXT (drop trailing spaces).
         TXT = TR
 RT      EQ(SIZE(TXT), 0)                        :S(RTD)
-*       XXX dcsno-funcall-arithmetic: extract SIZE for SUBSTR-arg + arith
-        SZ = SIZE(TXT)
-        CH = SUBSTR(TXT, SZ, 1)
-        IDENT(CH, ' ')                          :F(RTD)
-        SZ = SZ - 1
-        TXT = SUBSTR(TXT, 1, SZ)
+*       XXX dcsno-ident-double-nested-arg: extract SIZE before IDENT
+        N = SIZE(TXT)
+        IDENT(SUBSTR(TXT, N, 1), ' ')           :F(RTD)
+        TXT = SUBSTR(TXT, 1, SIZE(TXT) - 1)
         :(RT)
 RTD
 
@@ -82,20 +81,15 @@ RTD
         LBL = LR
 LT      EQ(SIZE(LBL), 0)                        :S(LTD)
         IDENT(SUBSTR(LBL, 1, 1), ' ')           :F(LTD)
-*       XXX dcsno-funcall-arithmetic: extract SIZE before arith
-        SZ = SIZE(LBL)
-        SZ = SZ - 1
-        LBL = SUBSTR(LBL, 2, SZ)
+        LBL = SUBSTR(LBL, 2, SIZE(LBL) - 1)
         :(LT)
 
 *       Right-trim LBL (drop trailing spaces).
 LTD     EQ(SIZE(LBL), 0)                        :S(LBLD)
-*       XXX dcsno-funcall-arithmetic: extract SIZE for SUBSTR-arg + arith
-        SZ = SIZE(LBL)
-        CH = SUBSTR(LBL, SZ, 1)
-        IDENT(CH, ' ')                          :F(LBLD)
-        SZ = SZ - 1
-        LBL = SUBSTR(LBL, 1, SZ)
+*       XXX dcsno-ident-double-nested-arg: extract SIZE before IDENT
+        N = SIZE(LBL)
+        IDENT(SUBSTR(LBL, N, 1), ' ')           :F(LBLD)
+        LBL = SUBSTR(LBL, 1, SIZE(LBL) - 1)
         :(LTD)
 LBLD
 

@@ -1,0 +1,11 @@
+{
+  "task_type": "fix",
+  "state": {
+    "number": 1,
+    "step": "fix-verify-snobol4"
+  },
+  "action": "Tested cor24-emu canonical pattern manually first to confirm the dcemu --lgo+--load-binary fix is live (binary timestamp 14:39:36); rewrote scripts/verify-snobol4.sh; ran twice (first run revealed the Loaded-line stdout leak); added grep filter; ran clean.",
+  "result": "success",
+  "reward": 1,
+  "timestamp": "2026-05-08T17:13:41"
+}
