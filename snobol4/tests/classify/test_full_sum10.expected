@@ -1,0 +1,10 @@
+stmt1 line=2 label= kind=PROGRAM text=PROGRAM SUM10
+stmt2 line=3 label= kind=INTEGER_DECL text=INTEGER I
+stmt3 line=4 label= kind=INTEGER_DECL text=INTEGER S
+stmt4 line=5 label= kind=ASSIGN text=S = 0
+stmt5 line=6 label= kind=DO text=DO 100 I = 1, 10
+stmt6 line=7 label= kind=ASSIGN text=S = S + I
+stmt7 line=8 label=100 kind=CONTINUE text=CONTINUE
+stmt8 line=9 label= kind=PRINT text=PRINT *, S
+stmt9 line=10 label= kind=STOP text=STOP
+stmt10 line=11 label= kind=END text=END

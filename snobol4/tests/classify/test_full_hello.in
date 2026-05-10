@@ -1,0 +1,6 @@
+stmt1 line=2 label= text=PROGRAM HELLO
+stmt2 line=3 label= text=INTEGER I
+stmt3 line=4 label= text=I = 42
+stmt4 line=5 label= text=PRINT *, I
+stmt5 line=6 label= text=STOP
+stmt6 line=7 label= text=END

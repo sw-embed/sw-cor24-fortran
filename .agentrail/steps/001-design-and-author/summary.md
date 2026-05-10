@@ -1,0 +1,1 @@
+classify.sno authored, smoke-tested green on hand-crafted hello and sum10 inputs (16 records, all kinds correctly classified). Discovered two more dialect quirks while writing: SPAN takes literal class only (not variable), and POS(0)/ARB don't work -- documented inline.
