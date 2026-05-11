@@ -1,6 +1,6 @@
-name = "milestone-2-classify"
-status = "completed"
+name = "milestone-3-emit-hello"
+status = "active"
 current_step = 2
-created_at = "2026-05-10T11:13:23"
+created_at = "2026-05-10T14:57:44"
 plan_file = ".agentrail/plan.md"
 retroactive = false

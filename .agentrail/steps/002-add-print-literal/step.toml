@@ -1,0 +1,11 @@
+number = 2
+slug = "add-print-literal"
+status = "pending"
+description = """
+Extend emit_asm.sno to handle kind=PRINT with a quoted string literal.
+
+For e..."""
+role = "legacy"
+context_files = []
+created_at = "2026-05-11T10:06:46"
+commits = []
