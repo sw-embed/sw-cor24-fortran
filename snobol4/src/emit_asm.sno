@@ -98,13 +98,19 @@
         OUTPUT = '        jmp     (r1)'
         OUTPUT = ''
 
+*       String-literal pool state.
+        LITNUM = 0
+        LITDATA = ''
+        NL = CHAR(10)
+
 *       === Main loop: dispatch on classified records ===
 LOOP    LINE = RAWINPUT                         :F(EOF)
-        LINE 'kind=' BREAK(' ') . KIND ' text=' :F(BAD)
+        LINE 'kind=' BREAK(' ') . KIND ' text=' REM . TXT  :F(BAD)
         IDENT(KIND, 'PROGRAM')                  :S(KPRG)
+        IDENT(KIND, 'PRINT')                    :S(KPRT)
         IDENT(KIND, 'STOP')                     :S(KSTP)
         IDENT(KIND, 'END')                      :S(KEND)
-*       Other kinds: silently skip for the halt-skeleton saga.
+*       Other kinds: silently skip in this saga.
         :(LOOP)
 
 *       PROGRAM: emit _main label and prologue.
@@ -116,12 +122,46 @@ KPRG    OUTPUT = '        .globl  _main'
         OUTPUT = '        mov     fp,sp'
         :(LOOP)
 
+*       PRINT: parse string literal from TXT, emit call to _puts,
+*       accumulate the literal (with appended \n\0) into LITDATA.
+*       Uses double-quoted "'" -- this dialect parses '''' as empty
+*       string (not a 1-char apostrophe per standard SNOBOL4).
+KPRT    TXT BREAK("'") "'" BREAK("'") . LIT     :F(BAD)
+*       Convert LIT to comma-separated decimal byte values in BYTES.
+        BYTES = ''
+        T = LIT
+B2B     EQ(SIZE(T), 0)                          :S(B2BD)
+        CH = SUBSTR(T, 1, 1)
+        ORD = 32
+ORDLP   EQ(ORD, 127)                            :S(ORDNF)
+        IDENT(CHAR(ORD), CH)                    :S(ORDFND)
+        ORD = ORD + 1                           :(ORDLP)
+ORDFND  BYTES = BYTES ORD ','
+        T = SUBSTR(T, 2, SIZE(T) - 1)
+        :(B2B)
+ORDNF   BYTES = BYTES '63,'
+        T = SUBSTR(T, 2, SIZE(T) - 1)
+        :(B2B)
+B2BD    BYTES = BYTES '10,0'
+*       Emit call to _puts on label _S<LITNUM>.
+        OUTPUT = '        la      r0,_S' LITNUM
+        OUTPUT = '        push    r0'
+        OUTPUT = '        la      r0,_puts'
+        OUTPUT = '        jal     r1,(r0)'
+        OUTPUT = '        add     sp,3'
+*       Accumulate literal in LITDATA pool (emitted at END).
+        LITDATA = LITDATA '_S' LITNUM ':' NL
+        LITDATA = LITDATA '        .byte   ' BYTES NL
+        LITNUM = LITNUM + 1
+        :(LOOP)
+
 *       STOP: branch to the function-end epilogue.
 KSTP    OUTPUT = '        lc      r0,0'
         OUTPUT = '        bra     LEND'
         :(LOOP)
 
-*       END: emit epilogue label + epilogue + trailing .data section.
+*       END: emit epilogue label + epilogue + trailing .data section
+*       with the accumulated string-literal pool.
 KEND    OUTPUT = 'LEND:'
         OUTPUT = '        mov     sp,fp'
         OUTPUT = '        pop     r1'
@@ -130,6 +170,8 @@ KEND    OUTPUT = 'LEND:'
         OUTPUT = '        jmp     (r1)'
         OUTPUT = ''
         OUTPUT = '        .data'
+        EQ(SIZE(LITDATA), 0)                    :S(LOOP)
+        OUTPUT = LITDATA
         :(LOOP)
 
 BAD     OUTPUT = '* WARN: malformed input: ' LINE  :(LOOP)
