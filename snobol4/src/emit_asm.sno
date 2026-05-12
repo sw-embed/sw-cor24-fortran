@@ -98,6 +98,13 @@
         OUTPUT = '        jmp     (r1)'
         OUTPUT = ''
 
+*       Marker for scripts/fortran to splice runtime _putint here.
+*       Cannot inline _putint emit (~70 OUTPUTs) because dcsno
+*       miscompiles SNOBOL4 programs above ~233 statements. See
+*       tools/briefs/dcsno-static-program-size-limit.md.
+        OUTPUT = '; __RUNTIME_PUTINT__'
+        OUTPUT = ''
+
 *       String-literal pool state.
         LITNUM = 0
         LITDATA = ''
@@ -122,11 +129,35 @@ KPRG    OUTPUT = '        .globl  _main'
         OUTPUT = '        mov     fp,sp'
         :(LOOP)
 
-*       PRINT: parse string literal from TXT, emit call to _puts,
-*       accumulate the literal (with appended \n\0) into LITDATA.
+*       PRINT: detect string literal vs integer literal in arg list.
+*       String form: PRINT *, 'lit'    -> emit call to _puts with
+*                                        accumulated string pool entry.
+*       Integer form: PRINT *, <digits> -> emit call to _putint with
+*                                          la r0, N; plus newline putc.
 *       Uses double-quoted "'" -- this dialect parses '''' as empty
 *       string (not a 1-char apostrophe per standard SNOBOL4).
-KPRT    TXT BREAK("'") "'" BREAK("'") . LIT     :F(BAD)
+KPRT    TXT BREAK("'") "'" BREAK("'") . LIT     :S(KPRTS)
+*       No apostrophe -- try integer literal.
+        TXT 'PRINT *' SPAN(' ,') SPAN('0123456789') . NUM  :S(KPRTI)
+*       Neither form recognised.
+        :(BAD)
+
+*       --- PRINT integer literal ---
+KPRTI   OUTPUT = '        la      r0,' NUM
+        OUTPUT = '        push    r0'
+        OUTPUT = '        la      r0,_putint'
+        OUTPUT = '        jal     r1,(r0)'
+        OUTPUT = '        add     sp,3'
+*       Emit a trailing newline (FORTRAN list-directed PRINT).
+        OUTPUT = '        lc      r0,10'
+        OUTPUT = '        push    r0'
+        OUTPUT = '        la      r0,_putc'
+        OUTPUT = '        jal     r1,(r0)'
+        OUTPUT = '        add     sp,3'
+        :(LOOP)
+
+*       --- PRINT string literal ---
+KPRTS
 *       Convert LIT to comma-separated decimal byte values in BYTES.
         BYTES = ''
         T = LIT
@@ -174,7 +205,7 @@ KEND    OUTPUT = 'LEND:'
         OUTPUT = LITDATA
         :(LOOP)
 
-BAD     OUTPUT = '* WARN: malformed input: ' LINE  :(LOOP)
+BAD     OUTPUT = '; WARN: malformed input: ' LINE  :(LOOP)
 
 EOF
 END

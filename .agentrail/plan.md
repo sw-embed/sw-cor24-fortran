@@ -1,40 +1,47 @@
-Implement emit_asm.sno: the FTI-0 code-generation phase, scoped to
-exactly enough to compile examples/hello.f end-to-end into a
-runnable hello.lgo that prints "Hello, World!".
+Implement FTI-0 print-integer: extend the compiler to support
+`PRINT *, <integer-literal>`, e.g. `PRINT *, 42` -> "42\n".
 
-Input:  classified statement records (output of classify.sno),
-        format stmt<N> line=<M> label=<L> kind=<KIND> text=<text>
+Inputs (from prior sagas):
+- snobol4/src/normalize.sno  -- already preserves digits & ',' & '*'.
+- snobol4/src/classify.sno   -- already kinds PRINT records.
+- snobol4/src/emit_asm.sno   -- currently only handles PRINT with
+  a string literal (single-apostrophe-delimited).
 
-Output: COR24 assembly (.s) on stdout.
+Goal:
+- Edit examples/print-int.f containing `PRINT *, 42`.
+- `scripts/fortran examples/print-int.f | cor24-asm - | cor24-emu`
+  prints "42\n".
+- Same compiler still passes hello.f (no regression).
 
 Strategy:
-- Emit COR24 .s directly (skipping documented PL/SW intermediate;
-  matches the hand-written examples/hello.s pattern; minimises
-  toolchain dependencies).
-- Boilerplate skeleton emitted at start (always): _start, _halt
-  loop, _putc subroutine, _puts subroutine.
-- Per-kind dispatch:
-    PROGRAM   -> emit _main: prologue (push fp, etc.)
-    PRINT     -> extract string literal, emit la r0,_Sn; push r0;
-                 jal r1,(_puts); add sp,3; track literal in pool
-    STOP      -> emit lc r0,0; bra _halt   (return-and-halt)
-    END       -> emit _main epilogue + .data section + literal pool
-- String literal pool collected as records arrive; emitted at END.
+- COR24 has no native div/mod. Implement decimal int-to-ASCII via
+  repeated subtraction (write digits LIFO into a stack buffer,
+  then drain LIFO -> _putc). Single _putint subroutine, takes the
+  int arg @ 9(fp). Verified standalone on values 0, 1, 7, 10, 42,
+  99, 100, 12345, 1234567 before integration.
+- KPRT in emit_asm.sno detects integer-literal arg form via
+  `TXT 'PRINT *' SPAN(' ,') SPAN('0123456789') . NUM` and emits
+  `la r0,N; push r0; jal r1,(_putint); add sp,3` plus a trailing
+  newline via _putc(10).
 
-Scope of THIS saga: hello.f only. Subsequent sagas extend to
-print-integer, math, control flow, etc.
+Constraints learned along the way:
+- dcsno miscompiles SNOBOL4 programs above ~233 statements (filed
+  in tools/briefs/dcsno-static-program-size-limit.md). Inlining
+  ~70 OUTPUT lines for _putint pushes emit_asm.sno past the cap.
+- Workaround: split _putint into snobol4/runtime/putint.s (static)
+  and have scripts/fortran awk-splice it into emit_asm.sno's
+  output at a `; __RUNTIME_PUTINT__` marker line. Pure mechanical
+  splice; output is byte-equivalent to inlined form. When dcsno
+  raises the cap this can be inlined back.
 
 Steps:
-1. design-and-author -- author snobol4/src/emit_asm.sno covering
-   PROGRAM / STOP / END (halt skeleton, no PRINT). Verify a
-   classified-records input with just those produces a .s that
-   cor24-asm accepts and cor24-emu runs to halt.
-2. add-print-literal -- extend emit_asm.sno to handle PRINT with
-   a quoted string literal. Track literals in a pool, emit on END.
-3. fixtures-and-runner -- author snobol4/tests/emit/ fixtures and
-   scripts/test-emit.sh runner.
-4. integrate-end-to-end -- update scripts/fortran (or write a
-   pipeline script) to chain normalize -> classify -> emit on a
-   real .f source. End-to-end: scripts/fortran examples/hello.f |
-   cor24-asm | cor24-emu prints "Hello, World!" -- replacing the
-   Path A short-circuit fixture with real compilation.
+1. design-and-prototype-putint -- author/verify _putint runtime
+   standalone on edge-case values (0, 1, 7, 99, 100, 12345,
+   1234567).
+2. integrate-kprt-int-literal -- extend KPRT in emit_asm.sno
+   with the integer-literal dispatch path. Splice _putint via
+   scripts/fortran. End-to-end: print-int.f -> "42\n", hello.f
+   still works.
+3. fixtures-and-runner -- author snobol4/tests/emit/print-int/
+   fixtures and add to scripts/test-emit.sh runner (if exists).
+4. dgmark-and-pr -- dg-mark-pr feat/m4-print-int -> pr/m4-print-int.
