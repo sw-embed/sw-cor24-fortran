@@ -1,47 +1,68 @@
-Implement FTI-0 print-variable: extend the compiler to support
-INTEGER variable declarations, ASSIGN with an integer literal,
-and PRINT of an INTEGER variable.
+Implement FTI-0 assignment with binary arithmetic expressions:
+`X = <op1> <OP> <op2>` where each operand is a literal or
+variable name, and OP is one of `+`, `-`, `*`. Also adds the
+simple `X = Y` (variable copy) form that m5 didn't cover.
 
-Demo to land:
-    PROGRAM A
-    INTEGER X
-    X = 42
-    PRINT *, X
+Demos to land:
+
+    X = 2 + 3                        -> X holds 5
+    X = X + 1                        -> increment
+    PRINT *, sum-from-two-adds       -> demonstrates expression -> var -> print
+
+End-to-end fixture (examples/add.f):
+
+    PROGRAM ADD
+    INTEGER A
+    INTEGER B
+    INTEGER C
+    A = 7
+    B = 13
+    C = A + B
+    PRINT *, C
     STOP
     END
+    -> "20"
 
-Expected output: "42\n"
+This unblocks the loop-counter patterns in goto1.f / sum10.f
+once labels/GOTO/IF-GOTO/DO/CONTINUE land in subsequent sagas.
 
-This is the smallest unit that adds variable plumbing to the
-emitter -- it unlocks the next saga (m6) for adding arithmetic
-expressions (X = 2 + 3, X = X + 1), which in turn unlocks
-goto1.f / sum10.f after labels + GOTO + IF-GOTO + DO/CONTINUE.
+COR24 ISA for this saga (verified in
+sw-cor24-emulator/docs/cor24-tutorial.md):
+  add r0, r1   -- r0 = r0 + r1
+  sub r0, r1   -- r0 = r0 - r1
+  mul r0, r1   -- r0 = r0 * r1
+No div/mod -- expressions that would need them are out of scope.
 
-Prior sagas:
-- m1 (normalize) -- handles INTEGER, =, identifiers, variable
-  names (it's a fixed-form line normalizer; semantics-agnostic).
-- m2 (classify) -- already emits kind=INTEGER_DECL and kind=ASSIGN.
-- m3 (emit string PRINT) + m4 (emit integer-literal PRINT) --
-  current emit_asm.sno produces boilerplate, _main, _puts, _putint
-  (via runtime splice), and handles PRINT of a string or int literal.
+Codegen convention (matches existing _puts / _putint emit):
+  ; load op1 into r0
+  push r0
+  ; load op2 into r0
+  mov r1, r0
+  pop r0
+  add/sub/mul r0, r1
+  ; r0 holds result; store to _V_<lhs>
+  la r1, _V_<lhs>
+  sw r0, 0(r1)
 
-What's new in m5:
-- INTEGER_DECL X    -> track X in a variable table; emit a
-  `_V_X: .word 0` entry in a VARDATA pool (analogous to LITDATA).
-- ASSIGN X = <int>  -> emit `la r0,N / la r1,_V_X / sw r0,0(r1)`.
-- PRINT *, X        -> detect bare-identifier arg in KPRT, emit
-  `la r0,_V_X / lw r0,0(r0) / push r0 / jal r1,(_putint) /
-   add sp,3 / lc r0,10 / push r0 / jal r1,(_putc) / add sp,3`.
-- KEND              -> .data section now emits LITDATA *and* VARDATA.
+Pattern dispatch in KASN:
+  1. RHS parses as <T1> <OP> <T2>   -> binary expression (KASNB).
+  2. RHS parses as a digit-run      -> integer literal (KASNL, m5).
+  3. RHS parses as an alpha-run     -> variable copy   (KASNV, new).
+  Each operand load (KASNB inner) dispatches T-is-digit vs
+  T-is-alpha; emits `la r0,N` or `la r0,_V_X / lw r0,0(r0)`.
 
-Scope guard:
-- Only integer literals on the RHS of ASSIGN. Expressions
-  (`X = 2 + 3`, `X = X + 1`) come in m6.
-- Only INTEGER scalars. DIMENSION (arrays) deferred.
-- One PRINT arg per statement (already a current limitation).
+Constraints:
+- Single binary op only (no `X = A + B + C` parenthesization,
+  no chained operators). A reasonable next saga.
+- Operands are tokens: digit-run literals, alpha-run variable
+  names. No signs on literals (`-5`), no compound expressions.
+- Watch the dcsno ~233-statement cap (see
+  tools/briefs/dcsno-static-program-size-limit.md). Current
+  count is 176; budget ~30 new statements.
 
 Steps:
-1. integrate-int-decl-assign-printvar -- single step: do the
-   emit_asm.sno extension, ship examples/print-var.f, verify
-   end-to-end, regression on hello.f and print-int.f.
-2. dgmark-and-pr -- dg-mark-pr feat/m5-print-var -> pr/m5-print-var.
+1. integrate-binary-expr -- add the KASN binary path + KASNV
+   var-copy path. Verify examples/add.f and an X = X + 1
+   increment fixture. Regress hello.f / print-int.f /
+   print-var.f.
+2. dgmark-and-pr -- dg-mark-pr feat/m6-assign-expr -> pr/m6-assign-expr.

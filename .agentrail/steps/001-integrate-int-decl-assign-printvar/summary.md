@@ -1,1 +1,0 @@
-INTEGER decl + ASSIGN(literal) + PRINT(variable) work end-to-end. examples/print-var.f -> '42'. Multi-variable case works. hello.f and print-int.f regression-tested clean.

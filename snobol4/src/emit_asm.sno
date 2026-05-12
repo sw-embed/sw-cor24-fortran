@@ -23,85 +23,13 @@
 *       - Boilerplate is the same skeleton used in
 *         examples/hello.s (the hand-written Path A fixture).
 
-*       === Boilerplate emit (once, at start) ===
+*       === Boilerplate emit (markers; static text lives in
+*       snobol4/runtime/{prelude,putint}.s and is spliced in by
+*       scripts/fortran). Moved out of this SNOBOL4 source to
+*       keep statement count well under dcsno's static-program-
+*       size cap; see tools/briefs/dcsno-static-program-size-limit.md.
         OUTPUT = '.text'
-        OUTPUT = ''
-        OUTPUT = '        .globl  _start'
-        OUTPUT = '_start:'
-        OUTPUT = '        la      r0,_main'
-        OUTPUT = '        jal     r1,(r0)'
-        OUTPUT = '_halt:'
-        OUTPUT = '        bra     _halt'
-        OUTPUT = ''
-        OUTPUT = '        .globl  _putc'
-        OUTPUT = '_putc:'
-        OUTPUT = '        push    fp'
-        OUTPUT = '        push    r2'
-        OUTPUT = '        push    r1'
-        OUTPUT = '        mov     fp,sp'
-        OUTPUT = 'L1:'
-        OUTPUT = '        la      r0,16711937'
-        OUTPUT = '        lbu     r0,0(r0)'
-        OUTPUT = '        push    r0'
-        OUTPUT = '        la      r0,128'
-        OUTPUT = '        mov     r1,r0'
-        OUTPUT = '        pop     r0'
-        OUTPUT = '        and     r0,r1'
-        OUTPUT = '        ceq     r0,z'
-        OUTPUT = '        brt     L2'
-        OUTPUT = '        bra     L1'
-        OUTPUT = 'L2:'
-        OUTPUT = '        lw      r0,9(fp)'
-        OUTPUT = '        push    r0'
-        OUTPUT = '        la      r0,16711936'
-        OUTPUT = '        mov     r1,r0'
-        OUTPUT = '        pop     r0'
-        OUTPUT = '        sb      r0,0(r1)'
-        OUTPUT = 'L0:'
-        OUTPUT = '        mov     sp,fp'
-        OUTPUT = '        pop     r1'
-        OUTPUT = '        pop     r2'
-        OUTPUT = '        pop     fp'
-        OUTPUT = '        jmp     (r1)'
-        OUTPUT = ''
-        OUTPUT = '        .globl  _puts'
-        OUTPUT = '_puts:'
-        OUTPUT = '        push    fp'
-        OUTPUT = '        push    r2'
-        OUTPUT = '        push    r1'
-        OUTPUT = '        mov     fp,sp'
-        OUTPUT = 'L4:'
-        OUTPUT = '        lw      r0,9(fp)'
-        OUTPUT = '        lbu     r0,0(r0)'
-        OUTPUT = '        ceq     r0,z'
-        OUTPUT = '        brt     L5'
-        OUTPUT = '        lw      r0,9(fp)'
-        OUTPUT = '        lbu     r0,0(r0)'
-        OUTPUT = '        push    r0'
-        OUTPUT = '        la      r0,_putc'
-        OUTPUT = '        jal     r1,(r0)'
-        OUTPUT = '        add     sp,3'
-        OUTPUT = '        lw      r0,9(fp)'
-        OUTPUT = '        push    r0'
-        OUTPUT = '        lc      r0,1'
-        OUTPUT = '        mov     r1,r0'
-        OUTPUT = '        pop     r0'
-        OUTPUT = '        add     r0,r1'
-        OUTPUT = '        sw      r0,9(fp)'
-        OUTPUT = '        bra     L4'
-        OUTPUT = 'L5:'
-        OUTPUT = 'L3:'
-        OUTPUT = '        mov     sp,fp'
-        OUTPUT = '        pop     r1'
-        OUTPUT = '        pop     r2'
-        OUTPUT = '        pop     fp'
-        OUTPUT = '        jmp     (r1)'
-        OUTPUT = ''
-
-*       Marker for scripts/fortran to splice runtime _putint here.
-*       Cannot inline _putint emit (~70 OUTPUTs) because dcsno
-*       miscompiles SNOBOL4 programs above ~233 statements. See
-*       tools/briefs/dcsno-static-program-size-limit.md.
+        OUTPUT = '; __RUNTIME_PRELUDE__'
         OUTPUT = '; __RUNTIME_PUTINT__'
         OUTPUT = ''
 
@@ -143,10 +71,61 @@ KINT    TXT 'INTEGER' SPAN(' ') SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ') . VN  :F(BAD)
         VARDATA = VARDATA '        .word   0' NL
         :(LOOP)
 
-*       ASSIGN: `<NAME> = <int-literal>`. Only literal RHS in
-*       this saga; expression RHS comes in a later milestone.
-KASN    TXT BREAK(' =') . VN SPAN(' =') SPAN('0123456789') . NUM  :F(BAD)
-        OUTPUT = '        la      r0,' NUM
+*       ASSIGN: three RHS forms in order of pattern attempt.
+*         (1) `<NAME> = <T1> <OP> <T2>`  -- binary expression
+*             (KASNB); each T is a digit-run literal or alpha-run
+*             variable name; OP is + - or *.
+*         (2) `<NAME> = <int-literal>`   -- simple literal store
+*             (KASNL).
+*         (3) `<NAME> = <var-name>`      -- variable copy (KASNV).
+*       Parens, chained ops, and signed literals are out of scope.
+*       Emit blocks below use multi-line OUTPUT strings to dodge
+*       the dcsno static-program-size cap (see
+*       tools/briefs/dcsno-static-program-size-limit.md).
+KASN    TXT BREAK(' =') . VN SPAN(' =') REM . RHS                  :F(BAD)
+*       XXX dcsno-any-pattern: ANY('+-*') silently fails in this
+*       build (even ANY('X') against 'X' fails). Use SPAN, which
+*       happens to match a single char of class. Brief: TODO file.
+        RHS BREAK(' +-*/') . T1 SPAN(' ') SPAN('+-*') . OP SPAN(' ') REM . T2  :S(KASNB)
+        RHS SPAN('0123456789') . NUM                                :S(KASNL)
+        RHS SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ') . SRC                :S(KASNV)
+        :(BAD)
+
+*       NOTE: dcsno's concat-expression evaluator silently
+*       truncates results when >~4 string operands are
+*       concatenated in one expression. So per-emit we use one
+*       OUTPUT per asm line rather than building giant multi-
+*       line strings.
+KASNL   OUTPUT = '        la      r0,' NUM
+        OUTPUT = '        la      r1,_V_' VN
+        OUTPUT = '        sw      r0,0(r1)'
+        :(LOOP)
+
+KASNV   OUTPUT = '        la      r0,_V_' SRC
+        OUTPUT = '        lw      r0,0(r0)'
+        OUTPUT = '        la      r1,_V_' VN
+        OUTPUT = '        sw      r0,0(r1)'
+        :(LOOP)
+
+*       Binary expression. Dispatch T1 / T2 separately to either
+*       load-literal or load-var-and-deref. The op mnemonic is
+*       picked from a tiny lookup string ('+add -sub *mul '),
+*       avoiding 3 separate IDENT/assign labels.
+KASNB   T1 SPAN('0123456789')                                       :S(KASNB1L)
+        OUTPUT = '        la      r0,_V_' T1
+        OUTPUT = '        lw      r0,0(r0)'
+        :(KASNB1D)
+KASNB1L OUTPUT = '        la      r0,' T1
+KASNB1D OUTPUT = '        push    r0'
+        T2 SPAN('0123456789')                                       :S(KASNB2L)
+        OUTPUT = '        la      r0,_V_' T2
+        OUTPUT = '        lw      r0,0(r0)'
+        :(KASNB2D)
+KASNB2L OUTPUT = '        la      r0,' T2
+KASNB2D OUTPUT = '        mov     r1,r0'
+        OUTPUT = '        pop     r0'
+        '+add -sub *mul ' OP BREAK(' ') . OPI                       :F(BAD)
+        OUTPUT = '        ' OPI '     r0,r1'
         OUTPUT = '        la      r1,_V_' VN
         OUTPUT = '        sw      r0,0(r1)'
         :(LOOP)
