@@ -1,47 +1,47 @@
-Implement FTI-0 print-integer: extend the compiler to support
-`PRINT *, <integer-literal>`, e.g. `PRINT *, 42` -> "42\n".
+Implement FTI-0 print-variable: extend the compiler to support
+INTEGER variable declarations, ASSIGN with an integer literal,
+and PRINT of an INTEGER variable.
 
-Inputs (from prior sagas):
-- snobol4/src/normalize.sno  -- already preserves digits & ',' & '*'.
-- snobol4/src/classify.sno   -- already kinds PRINT records.
-- snobol4/src/emit_asm.sno   -- currently only handles PRINT with
-  a string literal (single-apostrophe-delimited).
+Demo to land:
+    PROGRAM A
+    INTEGER X
+    X = 42
+    PRINT *, X
+    STOP
+    END
 
-Goal:
-- Edit examples/print-int.f containing `PRINT *, 42`.
-- `scripts/fortran examples/print-int.f | cor24-asm - | cor24-emu`
-  prints "42\n".
-- Same compiler still passes hello.f (no regression).
+Expected output: "42\n"
 
-Strategy:
-- COR24 has no native div/mod. Implement decimal int-to-ASCII via
-  repeated subtraction (write digits LIFO into a stack buffer,
-  then drain LIFO -> _putc). Single _putint subroutine, takes the
-  int arg @ 9(fp). Verified standalone on values 0, 1, 7, 10, 42,
-  99, 100, 12345, 1234567 before integration.
-- KPRT in emit_asm.sno detects integer-literal arg form via
-  `TXT 'PRINT *' SPAN(' ,') SPAN('0123456789') . NUM` and emits
-  `la r0,N; push r0; jal r1,(_putint); add sp,3` plus a trailing
-  newline via _putc(10).
+This is the smallest unit that adds variable plumbing to the
+emitter -- it unlocks the next saga (m6) for adding arithmetic
+expressions (X = 2 + 3, X = X + 1), which in turn unlocks
+goto1.f / sum10.f after labels + GOTO + IF-GOTO + DO/CONTINUE.
 
-Constraints learned along the way:
-- dcsno miscompiles SNOBOL4 programs above ~233 statements (filed
-  in tools/briefs/dcsno-static-program-size-limit.md). Inlining
-  ~70 OUTPUT lines for _putint pushes emit_asm.sno past the cap.
-- Workaround: split _putint into snobol4/runtime/putint.s (static)
-  and have scripts/fortran awk-splice it into emit_asm.sno's
-  output at a `; __RUNTIME_PUTINT__` marker line. Pure mechanical
-  splice; output is byte-equivalent to inlined form. When dcsno
-  raises the cap this can be inlined back.
+Prior sagas:
+- m1 (normalize) -- handles INTEGER, =, identifiers, variable
+  names (it's a fixed-form line normalizer; semantics-agnostic).
+- m2 (classify) -- already emits kind=INTEGER_DECL and kind=ASSIGN.
+- m3 (emit string PRINT) + m4 (emit integer-literal PRINT) --
+  current emit_asm.sno produces boilerplate, _main, _puts, _putint
+  (via runtime splice), and handles PRINT of a string or int literal.
+
+What's new in m5:
+- INTEGER_DECL X    -> track X in a variable table; emit a
+  `_V_X: .word 0` entry in a VARDATA pool (analogous to LITDATA).
+- ASSIGN X = <int>  -> emit `la r0,N / la r1,_V_X / sw r0,0(r1)`.
+- PRINT *, X        -> detect bare-identifier arg in KPRT, emit
+  `la r0,_V_X / lw r0,0(r0) / push r0 / jal r1,(_putint) /
+   add sp,3 / lc r0,10 / push r0 / jal r1,(_putc) / add sp,3`.
+- KEND              -> .data section now emits LITDATA *and* VARDATA.
+
+Scope guard:
+- Only integer literals on the RHS of ASSIGN. Expressions
+  (`X = 2 + 3`, `X = X + 1`) come in m6.
+- Only INTEGER scalars. DIMENSION (arrays) deferred.
+- One PRINT arg per statement (already a current limitation).
 
 Steps:
-1. design-and-prototype-putint -- author/verify _putint runtime
-   standalone on edge-case values (0, 1, 7, 99, 100, 12345,
-   1234567).
-2. integrate-kprt-int-literal -- extend KPRT in emit_asm.sno
-   with the integer-literal dispatch path. Splice _putint via
-   scripts/fortran. End-to-end: print-int.f -> "42\n", hello.f
-   still works.
-3. fixtures-and-runner -- author snobol4/tests/emit/print-int/
-   fixtures and add to scripts/test-emit.sh runner (if exists).
-4. dgmark-and-pr -- dg-mark-pr feat/m4-print-int -> pr/m4-print-int.
+1. integrate-int-decl-assign-printvar -- single step: do the
+   emit_asm.sno extension, ship examples/print-var.f, verify
+   end-to-end, regression on hello.f and print-int.f.
+2. dgmark-and-pr -- dg-mark-pr feat/m5-print-var -> pr/m5-print-var.

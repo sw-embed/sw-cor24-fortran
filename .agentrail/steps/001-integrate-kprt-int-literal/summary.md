@@ -1,1 +1,0 @@
-print-int.f -> '42' end-to-end works; hello.f still works. _putint integrated as a static runtime splice (snobol4/runtime/putint.s + awk in scripts/fortran) due to dcsno static-program-size limit (brief filed).

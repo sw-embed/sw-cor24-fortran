@@ -1,0 +1,9 @@
+number = 1
+slug = "integrate-kprt-int-literal"
+status = "completed"
+description = "Extend KPRT in snobol4/src/emit_asm.sno with an integer-literal dispatch path..."
+role = "production"
+context_files = []
+created_at = "2026-05-12T15:38:03"
+completed_at = "2026-05-12T15:39:02"
+commits = ["258f67a032be49c1da6ae424275ba000600f3838"]
