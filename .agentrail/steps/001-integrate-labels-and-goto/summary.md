@@ -1,0 +1,1 @@
+Labels + GOTO + IF-GOTO work end-to-end. goto1.f prints 1..5. KASN expression evaluator refactored into shared EXPR block reused by KIFG (saves ~15 statements). All 5 demos pass (hello/print-int/print-var/add/goto1).

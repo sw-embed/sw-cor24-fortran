@@ -40,11 +40,23 @@
         NL = CHAR(10)
 
 *       === Main loop: dispatch on classified records ===
+*       Capture label=<L> too: when L is non-empty, emit
+*       `L<L>:` before the per-kind emit so GOTO/IF-GOTO can
+*       target the labelled statement. Field extraction is
+*       split across three patterns because dcsno truncates
+*       pattern results with too many `.` captures in one
+*       expression (companion limit to the concat-operand bug).
 LOOP    LINE = RAWINPUT                         :F(EOF)
-        LINE 'kind=' BREAK(' ') . KIND ' text=' REM . TXT  :F(BAD)
-        IDENT(KIND, 'PROGRAM')                  :S(KPRG)
+        LINE 'label=' BREAK(' ') . LBL          :F(BAD)
+        LINE 'kind=' BREAK(' ') . KIND          :F(BAD)
+        LINE 'text=' REM . TXT                  :F(BAD)
+        EQ(SIZE(LBL), 0)                        :S(LDISP)
+        OUTPUT = 'L' LBL ':'
+LDISP   IDENT(KIND, 'PROGRAM')                  :S(KPRG)
         IDENT(KIND, 'INTEGER_DECL')             :S(KINT)
         IDENT(KIND, 'ASSIGN')                   :S(KASN)
+        IDENT(KIND, 'GOTO')                     :S(KGOT)
+        IDENT(KIND, 'IF_GOTO')                  :S(KIFG)
         IDENT(KIND, 'PRINT')                    :S(KPRT)
         IDENT(KIND, 'STOP')                     :S(KSTP)
         IDENT(KIND, 'END')                      :S(KEND)
@@ -71,63 +83,77 @@ KINT    TXT 'INTEGER' SPAN(' ') SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ') . VN  :F(BAD)
         VARDATA = VARDATA '        .word   0' NL
         :(LOOP)
 
-*       ASSIGN: three RHS forms in order of pattern attempt.
-*         (1) `<NAME> = <T1> <OP> <T2>`  -- binary expression
-*             (KASNB); each T is a digit-run literal or alpha-run
-*             variable name; OP is + - or *.
-*         (2) `<NAME> = <int-literal>`   -- simple literal store
-*             (KASNL).
-*         (3) `<NAME> = <var-name>`      -- variable copy (KASNV).
+*       ASSIGN / IF_GOTO share the same expression grammar:
+*         <T1> <OP> <T2>   -- binary expression
+*         <int-literal>    -- simple literal
+*         <var-name>       -- simple variable read
+*       Each caller parses its statement, sets RHS to the
+*       expression text and MODE to 'A' (assign) or 'I' (if),
+*       and falls into EXPR. EXPR evaluates the expression into
+*       r0, then dispatches on MODE to either:
+*         MODE='A': store r0 to _V_<VN>
+*         MODE='I': ceq r0,z + brf L<TGT>     (branch when r0 != 0)
 *       Parens, chained ops, and signed literals are out of scope.
-*       Emit blocks below use multi-line OUTPUT strings to dodge
-*       the dcsno static-program-size cap (see
-*       tools/briefs/dcsno-static-program-size-limit.md).
+*       XXX dcsno-any-pattern: ANY(class) silently fails in this
+*       build (even ANY('X') against 'X'). Use SPAN(class), which
+*       matches one-or-more chars of class and works for a single
+*       char too. Brief: TODO file.
 KASN    TXT BREAK(' =') . VN SPAN(' =') REM . RHS                  :F(BAD)
-*       XXX dcsno-any-pattern: ANY('+-*') silently fails in this
-*       build (even ANY('X') against 'X' fails). Use SPAN, which
-*       happens to match a single char of class. Brief: TODO file.
-        RHS BREAK(' +-*/') . T1 SPAN(' ') SPAN('+-*') . OP SPAN(' ') REM . T2  :S(KASNB)
-        RHS SPAN('0123456789') . NUM                                :S(KASNL)
-        RHS SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ') . SRC                :S(KASNV)
+        MODE = 'A'                                                  :(EXPR)
+
+KGOT    TXT 'GOTO' SPAN(' ') SPAN('0123456789') . TGT               :F(BAD)
+        OUTPUT = '        bra     L' TGT
+        :(LOOP)
+
+KIFG    TXT 'IF' BREAK('(') '(' BREAK(')') . RHS                    :F(BAD)
+        TXT 'GOTO' SPAN(' ') SPAN('0123456789') . TGT               :F(BAD)
+        MODE = 'I'                                                  :(EXPR)
+
+*       Expression evaluator. Per-emit uses one OUTPUT per asm
+*       line; dcsno's concat-expression evaluator truncates
+*       results when >~4 string operands appear in a single
+*       expression, so big multi-line OUTPUTs don't work here.
+EXPR    RHS BREAK(' +-*/') . T1 SPAN(' ') SPAN('+-*') . OP SPAN(' ') REM . T2  :S(EXPRB)
+        RHS SPAN('0123456789') . NUM                                :S(EXPRL)
+        RHS SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ') . SRC                :S(EXPRV)
         :(BAD)
 
-*       NOTE: dcsno's concat-expression evaluator silently
-*       truncates results when >~4 string operands are
-*       concatenated in one expression. So per-emit we use one
-*       OUTPUT per asm line rather than building giant multi-
-*       line strings.
-KASNL   OUTPUT = '        la      r0,' NUM
-        OUTPUT = '        la      r1,_V_' VN
-        OUTPUT = '        sw      r0,0(r1)'
-        :(LOOP)
+EXPRL   OUTPUT = '        la      r0,' NUM
+        :(EXPRD)
 
-KASNV   OUTPUT = '        la      r0,_V_' SRC
+EXPRV   OUTPUT = '        la      r0,_V_' SRC
         OUTPUT = '        lw      r0,0(r0)'
-        OUTPUT = '        la      r1,_V_' VN
-        OUTPUT = '        sw      r0,0(r1)'
-        :(LOOP)
+        :(EXPRD)
 
-*       Binary expression. Dispatch T1 / T2 separately to either
-*       load-literal or load-var-and-deref. The op mnemonic is
-*       picked from a tiny lookup string ('+add -sub *mul '),
-*       avoiding 3 separate IDENT/assign labels.
-KASNB   T1 SPAN('0123456789')                                       :S(KASNB1L)
+*       Binary: dispatch T1 / T2 separately to load-literal or
+*       load-var-and-deref. The op mnemonic is picked from a
+*       small lookup string ('+add -sub *mul '), avoiding three
+*       separate IDENT/assign labels.
+EXPRB   T1 SPAN('0123456789')                                       :S(EXPRB1L)
         OUTPUT = '        la      r0,_V_' T1
         OUTPUT = '        lw      r0,0(r0)'
-        :(KASNB1D)
-KASNB1L OUTPUT = '        la      r0,' T1
-KASNB1D OUTPUT = '        push    r0'
-        T2 SPAN('0123456789')                                       :S(KASNB2L)
+        :(EXPRB1D)
+EXPRB1L OUTPUT = '        la      r0,' T1
+EXPRB1D OUTPUT = '        push    r0'
+        T2 SPAN('0123456789')                                       :S(EXPRB2L)
         OUTPUT = '        la      r0,_V_' T2
         OUTPUT = '        lw      r0,0(r0)'
-        :(KASNB2D)
-KASNB2L OUTPUT = '        la      r0,' T2
-KASNB2D OUTPUT = '        mov     r1,r0'
+        :(EXPRB2D)
+EXPRB2L OUTPUT = '        la      r0,' T2
+EXPRB2D OUTPUT = '        mov     r1,r0'
         OUTPUT = '        pop     r0'
         '+add -sub *mul ' OP BREAK(' ') . OPI                       :F(BAD)
         OUTPUT = '        ' OPI '     r0,r1'
-        OUTPUT = '        la      r1,_V_' VN
+
+*       Post-EXPR dispatch on MODE (set by KASN / KIFG).
+EXPRD   IDENT(MODE, 'A')                                            :S(EXPRDA)
+        IDENT(MODE, 'I')                                            :S(EXPRDI)
+        :(BAD)
+EXPRDA  OUTPUT = '        la      r1,_V_' VN
         OUTPUT = '        sw      r0,0(r1)'
+        :(LOOP)
+EXPRDI  OUTPUT = '        ceq     r0,z'
+        OUTPUT = '        brf     L' TGT
         :(LOOP)
 
 *       PRINT: detect string literal vs integer literal vs

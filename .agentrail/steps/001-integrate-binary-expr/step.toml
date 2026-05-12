@@ -1,9 +1,0 @@
-number = 1
-slug = "integrate-binary-expr"
-status = "completed"
-description = "Extend snobol4/src/emit_asm.sno KASN to handle: (a) X = Y (variable copy: la ..."
-role = "production"
-context_files = []
-created_at = "2026-05-12T16:05:08"
-completed_at = "2026-05-12T16:31:11"
-commits = ["30377a53fb14c479708354b800f41dfaaec5ae40"]
