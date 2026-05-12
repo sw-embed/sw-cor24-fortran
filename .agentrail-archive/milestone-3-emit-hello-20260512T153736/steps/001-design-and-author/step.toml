@@ -1,0 +1,12 @@
+number = 1
+slug = "design-and-author"
+status = "completed"
+description = """
+Author snobol4/src/emit_asm.sno covering only PROGRAM / STOP / END
+kinds (hal..."""
+role = "production"
+context_files = []
+created_at = "2026-05-10T14:57:44"
+completed_at = "2026-05-11T10:06:46"
+task_type = "implement"
+commits = ["e040346a29d84bb47e0f45980c2a0066862115ad"]

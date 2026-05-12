@@ -1,1 +1,0 @@
-emit_asm.sno halt skeleton authored. Consumes classified PROGRAM/STOP/END records, emits boilerplate + per-record asm, produces 89-line .s that cor24-asm accepts and cor24-emu runs to halt (13 instructions, exit 0).
