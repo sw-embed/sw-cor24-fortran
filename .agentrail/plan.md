@@ -1,68 +1,52 @@
-Implement FTI-0 assignment with binary arithmetic expressions:
-`X = <op1> <OP> <op2>` where each operand is a literal or
-variable name, and OP is one of `+`, `-`, `*`. Also adds the
-simple `X = Y` (variable copy) form that m5 didn't cover.
+Implement FTI-0 labels, unconditional GOTO, and conditional
+IF (expr) GOTO — enough to compile examples/goto1.f end-to-end.
 
-Demos to land:
+Demo to unblock (examples/goto1.f):
 
-    X = 2 + 3                        -> X holds 5
-    X = X + 1                        -> increment
-    PRINT *, sum-from-two-adds       -> demonstrates expression -> var -> print
-
-End-to-end fixture (examples/add.f):
-
-    PROGRAM ADD
-    INTEGER A
-    INTEGER B
-    INTEGER C
-    A = 7
-    B = 13
-    C = A + B
-    PRINT *, C
+    PROGRAM COUNT
+    INTEGER I
+    I = 1
+100 PRINT *, I
+    I = I + 1
+    IF (I - 6) GOTO 100
     STOP
     END
-    -> "20"
 
-This unblocks the loop-counter patterns in goto1.f / sum10.f
-once labels/GOTO/IF-GOTO/DO/CONTINUE land in subsequent sagas.
+Expected output: lines "1", "2", "3", "4", "5".
 
-COR24 ISA for this saga (verified in
-sw-cor24-emulator/docs/cor24-tutorial.md):
-  add r0, r1   -- r0 = r0 + r1
-  sub r0, r1   -- r0 = r0 - r1
-  mul r0, r1   -- r0 = r0 * r1
-No div/mod -- expressions that would need them are out of scope.
+What's new in m7:
+- Statement labels (cols 1-5 in source) emit `L<N>:` in the .s
+  right before the labelled statement.
+- KGOT  (kind=GOTO)    -> emit `bra     L<N>`.
+- KIFG  (kind=IF_GOTO) -> parse `IF (<expr>) GOTO <N>`, evaluate
+  expr to r0, emit `ceq r0,z; brf L<N>` (branch when nonzero).
 
-Codegen convention (matches existing _puts / _putint emit):
-  ; load op1 into r0
-  push r0
-  ; load op2 into r0
-  mov r1, r0
-  pop r0
-  add/sub/mul r0, r1
-  ; r0 holds result; store to _V_<lhs>
-  la r1, _V_<lhs>
-  sw r0, 0(r1)
+FTI-0 IF semantics for this saga: `IF (expr) GOTO L` branches
+when expr != 0; falls through when expr == 0. This matches the
+goto1.f loop-exit pattern (`I - 6` is 0 when I=6).
 
-Pattern dispatch in KASN:
-  1. RHS parses as <T1> <OP> <T2>   -> binary expression (KASNB).
-  2. RHS parses as a digit-run      -> integer literal (KASNL, m5).
-  3. RHS parses as an alpha-run     -> variable copy   (KASNV, new).
-  Each operand load (KASNB inner) dispatches T-is-digit vs
-  T-is-alpha; emits `la r0,N` or `la r0,_V_X / lw r0,0(r0)`.
+Expression evaluator refactor:
+- KASN and KIFG share the same expression grammar (single
+  binary or single operand). Refactor into a common EXPR block:
+  caller sets MODE ('A' for ASSIGN, 'I' for IF) and the
+  per-mode target (VN for ASSIGN dest, TGT for IF target),
+  jumps to EXPR; EXPR ends with a dispatch on MODE to either
+  store-to-_V_<VN> or ceq/brf-L<TGT>.
 
 Constraints:
-- Single binary op only (no `X = A + B + C` parenthesization,
-  no chained operators). A reasonable next saga.
-- Operands are tokens: digit-run literals, alpha-run variable
-  names. No signs on literals (`-5`), no compound expressions.
-- Watch the dcsno ~233-statement cap (see
-  tools/briefs/dcsno-static-program-size-limit.md). Current
-  count is 176; budget ~30 new statements.
+- IF arg form: a single binary expr (`V OP T`) or a single
+  operand (`V` / `<lit>`). Same grammar as ASSIGN RHS. Parens,
+  chained ops, relational/logical operators, arithmetic IF
+  (`IF (X) L1, L2, L3`) — all out of scope.
+- GOTO arg must be a positive integer label.
+- Labels in the source: only one label per statement (FORTRAN
+  convention anyway).
+- Cap awareness: emit_asm.sno is at 132 statements post-m6.
+  Refactor + new code stays under ~180.
 
 Steps:
-1. integrate-binary-expr -- add the KASN binary path + KASNV
-   var-copy path. Verify examples/add.f and an X = X + 1
-   increment fixture. Regress hello.f / print-int.f /
-   print-var.f.
-2. dgmark-and-pr -- dg-mark-pr feat/m6-assign-expr -> pr/m6-assign-expr.
+1. integrate-labels-and-goto -- update LOOP pattern to capture
+   the `label=` field, emit `L<N>:` when present, add KGOT and
+   KIFG dispatches, refactor KASN's expr-eval into a shared EXPR
+   block.
+2. dgmark-and-pr -- dg-mark-pr feat/m7-goto -> pr/m7-goto.
