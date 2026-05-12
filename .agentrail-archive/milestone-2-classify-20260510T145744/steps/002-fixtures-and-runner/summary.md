@@ -1,0 +1,1 @@
+Authored snobol4/tests/classify/ (7 files: 3 .in/.expected pairs covering 28 records across all 12 kinds, plus README.md), and scripts/test-classify.sh runner. test-classify: 3/3 passed; test-normalize: 8/8 (no regression). m2-classify saga complete.

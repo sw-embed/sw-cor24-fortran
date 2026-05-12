@@ -5,33 +5,23 @@
 #   fortran <input.f>            # writes COR24 assembly to stdout
 #   fortran --help
 #
-# CURRENT STATUS: Path A only.
+# Real FTI-0 compilation. Chains the three SNOBOL4-implemented
+# compiler phases on the COR24 emulator:
 #
-# This wrapper is a Path-A fixture per
-#   tools/briefs/dcftn-fortran-hello-world.md
-# It short-circuits for the canonical Hello-World source
-#   examples/hello.f
-# by emitting the pre-baked
-#   examples/hello.s
-# on stdout. Any other input errors out -- the full FTI-0 compiler
-# (the SNOBOL4-based pipeline that consumes arbitrary .f sources)
-# is a separate parallel effort tracked under the milestone-1
-# saga (currently archived behind the dcemu --lgo + --uart-file
-# bug; see docs/snobol4-blockers.md).
+#   input.f -> normalize.sno -> classify.sno -> emit_asm.sno -> .s
 #
-# When the full compiler is ready, this wrapper will grow a Path B
-# branch that invokes
-#   cor24-emu --lgo $TOOLROOT/../lib/cor24/snobol4.lgo \
-#             --uart-file <our compiler.sno> \
-#             -u "$(cat <input.f>)"<EOT>
-# instead.
+# Each phase runs as a separate snobol4 invocation; output of phase N
+# is loaded at 0x090000 for phase N+1.
 #
-# End-to-end pipeline (Path A):
+# End-to-end pipeline:
 #
-#   scripts/fortran examples/hello.f > /tmp/hello.s
-#   cor24-asm /tmp/hello.s -o /tmp/hello.lgo
-#   cor24-emu --lgo /tmp/hello.lgo --quiet --speed 0 -n 1000000
-#       => prints "Hello, World!\n", exit 0
+#   scripts/fortran input.f > /tmp/foo.s
+#   cor24-asm /tmp/foo.s -o /tmp/foo.lgo
+#   cor24-emu --lgo /tmp/foo.lgo --quiet --speed 0
+#
+# Replaces the earlier Path-A short-circuit which emitted a
+# pre-baked examples/hello.s. The compiler now produces real output
+# from any .f source within the FTI-0 subset that the phases support.
 
 set -euo pipefail
 
@@ -55,142 +45,41 @@ if [ ! -f "$INPUT_F" ]; then
     exit 1
 fi
 
-INPUT_BASENAME="$(basename "$INPUT_F")"
-
-# Path A short-circuit: hello.f -> pre-baked hello.s.
-#
-# The heredoc below is the canonical source. examples/hello.s in the
-# repo carries the same bytes for human reference and is exercised by
-# scripts/test-hello.sh end-to-end, so divergence is caught.
-#
-# The wrapper is self-contained: no file lookup at runtime, so it
-# works identically whether invoked as ./scripts/fortran (from the
-# repo) or as $TOOLROOT/fortran (system-installed by mike).
-if [ "$INPUT_BASENAME" = "hello.f" ]; then
-    cat <<'HELLO_S_EOF'
-; COR24 assembly: prints "Hello, World!\n" via UART and halts.
-;
-; This is a Path-A fixture per
-;   tools/briefs/dcftn-fortran-hello-world.md
-; The full FTI-0 compiler isn't ready to emit this from
-;   examples/hello.f
-; yet; see docs/snobol4-blockers.md for the upstream gate. Until
-; then, scripts/fortran short-circuits hello.f to this prebaked .s.
-;
-; Structure adapted from the tc24r demo
-;   sw-cor24-x-tinyc/demos/hello.s
-; (proven working under cor24-asm + cor24-emu). The only change is
-; the byte sequence in _S0: "Hello, World!\n\0" instead of
-; "Hello, COR24!\n\0".
-
-.text
-
-        .globl  _start
-_start:
-        la      r0,_main
-        jal     r1,(r0)
-_halt:
-        bra     _halt
-
-        .globl  _putc
-_putc:
-        push    fp
-        push    r2
-        push    r1
-        mov     fp,sp
-L1:
-        la      r0,16711937
-        lbu     r0,0(r0)
-        push    r0
-        la      r0,128
-        mov     r1,r0
-        pop     r0
-        and     r0,r1
-        ceq     r0,z
-        brt     L2
-        bra     L1
-L2:
-        lw      r0,9(fp)
-        push    r0
-        la      r0,16711936
-        mov     r1,r0
-        pop     r0
-        sb      r0,0(r1)
-L0:
-        mov     sp,fp
-        pop     r1
-        pop     r2
-        pop     fp
-        jmp     (r1)
-
-        .globl  _puts
-_puts:
-        push    fp
-        push    r2
-        push    r1
-        mov     fp,sp
-L4:
-        lw      r0,9(fp)
-        lbu     r0,0(r0)
-        ceq     r0,z
-        brt     L5
-        lw      r0,9(fp)
-        lbu     r0,0(r0)
-        push    r0
-        la      r0,_putc
-        jal     r1,(r0)
-        add     sp,3
-        lw      r0,9(fp)
-        push    r0
-        lc      r0,1
-        mov     r1,r0
-        pop     r0
-        add     r0,r1
-        sw      r0,9(fp)
-        bra     L4
-L5:
-L3:
-        mov     sp,fp
-        pop     r1
-        pop     r2
-        pop     fp
-        jmp     (r1)
-
-        .globl  _main
-_main:
-        push    fp
-        push    r2
-        push    r1
-        mov     fp,sp
-        la      r0,_S0
-        push    r0
-        la      r0,_puts
-        jal     r1,(r0)
-        add     sp,3
-        lc      r0,0
-        bra     L6
-L6:
-        mov     sp,fp
-        pop     r1
-        pop     r2
-        pop     fp
-        jmp     (r1)
-
-        .data
-_S0:
-        ; "Hello, World!\n\0" -- 15 bytes
-        .byte   72,101,108,108,111,44,32,87,111,114,108,100,33,10,0
-HELLO_S_EOF
-    exit 0
+if ! command -v snobol4 >/dev/null 2>&1; then
+    echo "fortran: error: 'snobol4' wrapper not on PATH." >&2
+    echo "  See docs/snobol4-blockers.md and tools/briefs/dcsno-bootstrap-snobol4-toolchain.md." >&2
+    exit 2
 fi
 
-# Path B is not implemented yet.
-cat >&2 <<EOF
-fortran: error: only hello.f is supported in the current Path-A
-short-circuit. Input '$INPUT_BASENAME' would require the full FTI-0
-compiler, which is a separate parallel effort.
+NORMALIZE="$REPO_DIR/snobol4/src/normalize.sno"
+CLASSIFY="$REPO_DIR/snobol4/src/classify.sno"
+EMIT_ASM="$REPO_DIR/snobol4/src/emit_asm.sno"
 
-  See: docs/snobol4-blockers.md
-       tools/briefs/dcftn-fortran-hello-world.md
-EOF
-exit 1
+for f in "$NORMALIZE" "$CLASSIFY" "$EMIT_ASM"; do
+    if [ ! -f "$f" ]; then
+        echo "fortran: error: compiler phase source missing: $f" >&2
+        exit 1
+    fi
+done
+
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+# Phase 1: normalize -- read fixed-form .f, emit normalized statement
+# records.
+snobol4 --load-binary "$NORMALIZE@0x080000" \
+        --load-binary "$INPUT_F@0x090000" \
+        --entry 0 --quiet --speed 0 -n 100000000 -t 60 \
+        > "$WORK/normalized.txt" 2>/dev/null
+
+# Phase 2: classify -- identify statement kinds.
+snobol4 --load-binary "$CLASSIFY@0x080000" \
+        --load-binary "$WORK/normalized.txt@0x090000" \
+        --entry 0 --quiet --speed 0 -n 100000000 -t 60 \
+        > "$WORK/classified.txt" 2>/dev/null
+
+# Phase 3: emit_asm -- emit COR24 assembly.
+snobol4 --load-binary "$EMIT_ASM@0x080000" \
+        --load-binary "$WORK/classified.txt@0x090000" \
+        --entry 0 --quiet --speed 0 -n 100000000 -t 60 \
+        2>/dev/null

@@ -1,31 +1,27 @@
-Author snobol4/src/classify.sno. Reads normalized records from RAWINPUT
-(loaded at INP_LOAD_ADDR = 0x090000), classifies each statement by
-keyword inspection, emits the same record with a kind=<KIND> field
-inserted between label= and text=:
+Author snobol4/src/emit_asm.sno covering only PROGRAM / STOP / END
+kinds (halt skeleton, no PRINT yet).
 
-  input:  stmt1 line=2 label= text=PROGRAM HELLO
-  output: stmt1 line=2 label= kind=PROGRAM text=PROGRAM HELLO
+Reads classified records on RAWINPUT from 0x090000:
+  stmt<N> line=<M> label=<L> kind=<KIND> text=<text>
 
-Detection rules (first non-space token of <text>):
-  PROGRAM    -> kind=PROGRAM
-  INTEGER    -> kind=INTEGER_DECL
-  DIMENSION  -> kind=DIMENSION_DECL
-  GOTO       -> kind=GOTO
-  IF         -> kind=IF_GOTO   (assume IF (expr) GOTO label form per FTI-0)
-  DO         -> kind=DO
-  CONTINUE   -> kind=CONTINUE
-  PRINT      -> kind=PRINT
-  READ       -> kind=READ
-  STOP       -> kind=STOP
-  END        -> kind=END
-  (text contains '=' and starts with an identifier other than the
-   above keywords) -> kind=ASSIGN
+Always emits the boilerplate (_start, _halt loop, _putc, _puts)
+once at startup. Per-record dispatch on kind:
+  PROGRAM -> emit `_main:` label and prologue
+  STOP    -> emit `lc r0,0; bra _halt`
+  END     -> emit `_main` epilogue (`mov sp,fp; pop r1; pop r2;
+             pop fp; jmp (r1)`); then `.data` + (empty) literal pool
 
-Use extract-to-temp idiom for any function-call arithmetic /
-function-call as argument to other function call (the
-dcsno-funcall-arithmetic in-arg cases are still broken on the
-deployed snobol4.lgo as of 2026-05-10). Mark each site with
-* XXX dcsno-funcall-arithmetic so they can be reverted later.
+Other kinds: pass through silently for now (this saga is the
+skeleton; PRINT and others come in subsequent steps).
 
-Acceptance: file exists, has substantive implementation (not stub),
-covers all 12 kinds in comments, will be tested in step 2.
+Use the SNOBOL4 dialect idioms learned from classify.sno:
+  - BREAK / SPAN(<literal>) / literal / REM, no POS/ARB
+  - Single-direction :S/:F gotos
+  - In-place substitution where helpful
+  - Extract function-call results to temps if double-nested
+    predicate args appear (the dcsno-ident-double-nested-arg
+    workaround pattern)
+
+Acceptance: a hand-crafted classified-records input (PROGRAM, STOP,
+END only) produces a .s file that cor24-asm accepts and cor24-emu
+runs to halt with exit code 0 and no UART output.
