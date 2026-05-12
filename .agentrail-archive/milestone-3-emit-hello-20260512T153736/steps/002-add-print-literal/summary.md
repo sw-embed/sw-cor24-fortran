@@ -1,0 +1,1 @@
+emit_asm.sno PRINT support + scripts/fortran real pipeline. The FTI-0 compiler now actually compiles examples/hello.f end-to-end: 3 SNOBOL4 phases on cor24-emu produce real COR24 .s that prints 'Hello, World!'. Path A short-circuit dropped. test-hello, test-normalize, test-classify all green.
