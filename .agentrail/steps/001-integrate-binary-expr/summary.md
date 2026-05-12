@@ -1,0 +1,1 @@
+Binary expressions (+,-,*) work end-to-end. add.f (7+13)='20', sub.f (100-42)='58', mul.f (6*7)='42', inc.f (X=X+1)='10'. Hello/print-int/print-var regression clean. Also moved _start/_halt/_putc/_puts to runtime/prelude.s (alongside putint.s) — frees ~70 statements in emit_asm.sno for future sagas.
