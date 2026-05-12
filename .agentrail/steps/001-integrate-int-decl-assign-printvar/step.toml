@@ -1,0 +1,8 @@
+number = 1
+slug = "integrate-int-decl-assign-printvar"
+status = "in-progress"
+description = "Extend snobol4/src/emit_asm.sno to support: (1) INTEGER_DECL X -- track X in ..."
+role = "production"
+context_files = []
+created_at = "2026-05-12T15:42:05"
+commits = []
