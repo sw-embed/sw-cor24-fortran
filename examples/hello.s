@@ -1,18 +1,3 @@
-; COR24 assembly: prints "Hello, World!\n" via UART and halts.
-;
-; This is a Path-A fixture per
-;   tools/briefs/dcftn-fortran-hello-world.md
-; The full FTI-0 compiler isn't ready to emit this from
-;   examples/hello.f
-; yet; see docs/snobol4-blockers.md for the upstream gate. Until
-; then, scripts/fortran short-circuits hello.f to this prebaked .s.
-;
-; Structure adapted from the tc24r demo
-;   sw-cor24-x-tinyc/demos/hello.s
-; (proven working under cor24-asm + cor24-emu). The only change is
-; the byte sequence in _S0: "Hello, World!\n\0" instead of
-; "Hello, COR24!\n\0".
-
 .text
 
         .globl  _start
@@ -98,8 +83,8 @@ _main:
         jal     r1,(r0)
         add     sp,3
         lc      r0,0
-        bra     L6
-L6:
+        bra     LEND
+LEND:
         mov     sp,fp
         pop     r1
         pop     r2
@@ -108,5 +93,5 @@ L6:
 
         .data
 _S0:
-        ; "Hello, World!\n\0" -- 15 bytes
         .byte   72,101,108,108,111,44,32,87,111,114,108,100,33,10,0
+
