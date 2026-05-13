@@ -1,0 +1,1 @@
+DO/CONTINUE loops work end-to-end. sum10.f -> '55'. Single-DO scope (nesting deferred). Stripped most inline comments to fit under dcsno's ~12K source-byte cap. All 6 demos pass.
