@@ -1,51 +1,25 @@
 *       FTI-0 COR24 Assembly Emitter  --  snobol4/src/emit_asm.sno
-*
-*       Reads classified statement records (output of classify.sno)
-*       and emits COR24 assembly text on stdout.
-*
-*       Input format (one record per line, RAWINPUT from 0x090000):
-*               stmt<N> line=<M> label=<L> kind=<KIND> text=<text>
-*
-*       Output: COR24 .s on stdout that cor24-asm can assemble and
-*       cor24-emu can run.
-*
-*       Scope of THIS saga (m3-emit-hello, step 001 = halt skeleton):
-*       only PROGRAM, STOP, END kinds. No PRINT yet -- that follows
-*       in saga step 002. Compiled program loads, runs, and halts;
-*       no UART output.
-*
-*       Strategy:
-*       - Boilerplate (_start, _halt, _putc, _puts) emitted once at
-*         the top of the .s, always. The PROGRAM record triggers
-*         emission of `_main:` + prologue. STOP emits a branch to
-*         the function-end label LEND. END emits LEND: + epilogue
-*         + a trailing .data section.
-*       - Boilerplate is the same skeleton used in
-*         examples/hello.s (the hand-written Path A fixture).
+*       Reads classified records from classify.sno, emits .s
+*       text on stdout. _start/_halt/_putc/_puts/_putint are
+*       spliced from snobol4/runtime/{prelude,putint}.s by
+*       scripts/fortran (keeps this SNOBOL4 source small;
+*       dcsno caps source at ~12K bytes).
 
-*       === Boilerplate emit (markers; static text lives in
-*       snobol4/runtime/{prelude,putint}.s and is spliced in by
-*       scripts/fortran). Moved out of this SNOBOL4 source to
-*       keep statement count well under dcsno's static-program-
-*       size cap; see tools/briefs/dcsno-static-program-size-limit.md.
+*       === Prologue: emit `.text` + runtime markers ===
         OUTPUT = '.text'
         OUTPUT = '; __RUNTIME_PRELUDE__'
         OUTPUT = '; __RUNTIME_PUTINT__'
         OUTPUT = ''
 
-*       String-literal pool + INTEGER variable pool state.
+*       === State: string pool, var pool, DO-loop slot ===
         LITNUM = 0
         LITDATA = ''
         VARDATA = ''
         NL = CHAR(10)
+        DONUM = 0
+        DOLBL = ''
 
-*       === Main loop: dispatch on classified records ===
-*       Capture label=<L> too: when L is non-empty, emit
-*       `L<L>:` before the per-kind emit so GOTO/IF-GOTO can
-*       target the labelled statement. Field extraction is
-*       split across three patterns because dcsno truncates
-*       pattern results with too many `.` captures in one
-*       expression (companion limit to the concat-operand bug).
+*       === Main loop: parse record, emit label, dispatch ===
 LOOP    LINE = RAWINPUT                         :F(EOF)
         LINE 'label=' BREAK(' ') . LBL          :F(BAD)
         LINE 'kind=' BREAK(' ') . KIND          :F(BAD)
@@ -57,13 +31,14 @@ LDISP   IDENT(KIND, 'PROGRAM')                  :S(KPRG)
         IDENT(KIND, 'ASSIGN')                   :S(KASN)
         IDENT(KIND, 'GOTO')                     :S(KGOT)
         IDENT(KIND, 'IF_GOTO')                  :S(KIFG)
+        IDENT(KIND, 'DO')                       :S(KDO)
+        IDENT(KIND, 'CONTINUE')                 :S(KCNT)
         IDENT(KIND, 'PRINT')                    :S(KPRT)
         IDENT(KIND, 'STOP')                     :S(KSTP)
         IDENT(KIND, 'END')                      :S(KEND)
-*       Other kinds: silently skip in this saga.
         :(LOOP)
 
-*       PROGRAM: emit _main label and prologue.
+*       PROGRAM -> _main: prologue.
 KPRG    OUTPUT = '        .globl  _main'
         OUTPUT = '_main:'
         OUTPUT = '        push    fp'
@@ -72,47 +47,66 @@ KPRG    OUTPUT = '        .globl  _main'
         OUTPUT = '        mov     fp,sp'
         :(LOOP)
 
-*       INTEGER X: track X in the variable pool. Emit a
-*       `_V_X: .word 0` entry into VARDATA, flushed at END.
-*       SPAN of the alphabetic class stops at end-of-subject or
-*       any non-alpha char, so this handles both `INTEGER X` and
-*       `INTEGER X,Y` (latter captures X; Y handled by a
-*       follow-up saga that splits multi-decl forms).
+*       INTEGER <name> -> add `_V_<name>: .word 0` to VARDATA.
 KINT    TXT 'INTEGER' SPAN(' ') SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ') . VN  :F(BAD)
         VARDATA = VARDATA '_V_' VN ':' NL
         VARDATA = VARDATA '        .word   0' NL
         :(LOOP)
 
-*       ASSIGN / IF_GOTO share the same expression grammar:
-*         <T1> <OP> <T2>   -- binary expression
-*         <int-literal>    -- simple literal
-*         <var-name>       -- simple variable read
-*       Each caller parses its statement, sets RHS to the
-*       expression text and MODE to 'A' (assign) or 'I' (if),
-*       and falls into EXPR. EXPR evaluates the expression into
-*       r0, then dispatches on MODE to either:
-*         MODE='A': store r0 to _V_<VN>
-*         MODE='I': ceq r0,z + brf L<TGT>     (branch when r0 != 0)
-*       Parens, chained ops, and signed literals are out of scope.
-*       XXX dcsno-any-pattern: ANY(class) silently fails in this
-*       build (even ANY('X') against 'X'). Use SPAN(class), which
-*       matches one-or-more chars of class and works for a single
-*       char too. Brief: TODO file.
+*       ASSIGN <var> = <expr>: route to shared EXPR with MODE=A.
 KASN    TXT BREAK(' =') . VN SPAN(' =') REM . RHS                  :F(BAD)
         MODE = 'A'                                                  :(EXPR)
 
+*       GOTO <N> -> bra L<N>.
 KGOT    TXT 'GOTO' SPAN(' ') SPAN('0123456789') . TGT               :F(BAD)
         OUTPUT = '        bra     L' TGT
         :(LOOP)
 
+*       IF (<expr>) GOTO <N>: route to EXPR with MODE=I.
 KIFG    TXT 'IF' BREAK('(') '(' BREAK(')') . RHS                    :F(BAD)
         TXT 'GOTO' SPAN(' ') SPAN('0123456789') . TGT               :F(BAD)
         MODE = 'I'                                                  :(EXPR)
 
-*       Expression evaluator. Per-emit uses one OUTPUT per asm
-*       line; dcsno's concat-expression evaluator truncates
-*       results when >~4 string operands appear in a single
-*       expression, so big multi-line OUTPUTs don't work here.
+*       DO <lbl> <var> = <start>, <end>: emit init + loop-top
+*       label; save state for the matching CONTINUE to close
+*       the loop. Single-DO scope; nesting deferred.
+KDO     TXT 'DO' SPAN(' ') SPAN('0123456789') . DOLBL              :F(BAD)
+        TXT DOLBL SPAN(' ') BREAK(' =') . DOVAR                    :F(BAD)
+        TXT DOVAR SPAN(' =') SPAN('0123456789') . DOST             :F(BAD)
+        TXT ',' SPAN(' ') SPAN('0123456789') . DOEND               :F(BAD)
+        DOTOP = 'LDT' DONUM
+        DONUM = DONUM + 1
+        DOEND1 = DOEND + 1
+        OUTPUT = '        la      r0,' DOST
+        OUTPUT = '        la      r1,_V_' DOVAR
+        OUTPUT = '        sw      r0,0(r1)'
+        OUTPUT = DOTOP ':'
+        :(LOOP)
+
+*       CONTINUE: if statement's label matches saved DOLBL,
+*       emit increment + bound test + branch-back-to-DOTOP.
+*       Otherwise CONTINUE is a no-op (label already emitted).
+KCNT    IDENT(LBL, DOLBL)                                          :F(LOOP)
+        OUTPUT = '        la      r0,_V_' DOVAR
+        OUTPUT = '        lw      r0,0(r0)'
+        OUTPUT = '        add     r0,1'
+        OUTPUT = '        la      r1,_V_' DOVAR
+        OUTPUT = '        sw      r0,0(r1)'
+        OUTPUT = '        la      r0,_V_' DOVAR
+        OUTPUT = '        lw      r0,0(r0)'
+        OUTPUT = '        push    r0'
+        OUTPUT = '        la      r0,' DOEND1
+        OUTPUT = '        mov     r1,r0'
+        OUTPUT = '        pop     r0'
+        OUTPUT = '        cls     r0,r1'
+        OUTPUT = '        brt     ' DOTOP
+        DOLBL = ''
+        :(LOOP)
+
+*       === Shared expression evaluator (KASN/KIFG) ===
+*       Three RHS forms tried in order: binary, int literal,
+*       var-read. Result lands in r0. After EXPR, MODE chooses
+*       store (assign) vs ceq/brf (if branch).
 EXPR    RHS BREAK(' +-*/') . T1 SPAN(' ') SPAN('+-*') . OP SPAN(' ') REM . T2  :S(EXPRB)
         RHS SPAN('0123456789') . NUM                                :S(EXPRL)
         RHS SPAN('ABCDEFGHIJKLMNOPQRSTUVWXYZ') . SRC                :S(EXPRV)
@@ -125,10 +119,6 @@ EXPRV   OUTPUT = '        la      r0,_V_' SRC
         OUTPUT = '        lw      r0,0(r0)'
         :(EXPRD)
 
-*       Binary: dispatch T1 / T2 separately to load-literal or
-*       load-var-and-deref. The op mnemonic is picked from a
-*       small lookup string ('+add -sub *mul '), avoiding three
-*       separate IDENT/assign labels.
 EXPRB   T1 SPAN('0123456789')                                       :S(EXPRB1L)
         OUTPUT = '        la      r0,_V_' T1
         OUTPUT = '        lw      r0,0(r0)'
@@ -145,7 +135,6 @@ EXPRB2D OUTPUT = '        mov     r1,r0'
         '+add -sub *mul ' OP BREAK(' ') . OPI                       :F(BAD)
         OUTPUT = '        ' OPI '     r0,r1'
 
-*       Post-EXPR dispatch on MODE (set by KASN / KIFG).
 EXPRD   IDENT(MODE, 'A')                                            :S(EXPRDA)
         IDENT(MODE, 'I')                                            :S(EXPRDI)
         :(BAD)
@@ -156,29 +145,20 @@ EXPRDI  OUTPUT = '        ceq     r0,z'
         OUTPUT = '        brf     L' TGT
         :(LOOP)
 
-*       PRINT: detect string literal vs integer literal vs
-*       variable reference in arg list.
-*       String form:   PRINT *, 'lit'  -> _puts via pool entry.
-*       Integer form:  PRINT *, <int>  -> la r0,N; _putint; \n.
-*       Variable form: PRINT *, X      -> lw _V_X; _putint; \n.
-*       Uses double-quoted "'" -- this dialect parses '''' as empty
-*       string (not a 1-char apostrophe per standard SNOBOL4).
+*       === PRINT: detect 'lit' / int / var, dispatch ===
+*       Double-quoted "'" is required -- dcsno parses '''' as
+*       the empty string, not a 1-char apostrophe.
 KPRT    TXT BREAK("'") "'" BREAK("'") . LIT     :S(KPRTS)
-*       No apostrophe -- try integer literal.
         TXT 'PRINT *' SPAN(' ,') SPAN('0123456789') . NUM  :S(KPRTI)
-*       No digit run after `PRINT *,` -- try bare variable name.
         TXT 'PRINT *' SPAN(' ,') BREAK(' ') . VN  :S(KPRTV)
         TXT 'PRINT *' SPAN(' ,') REM . VN         :S(KPRTV)
-*       Neither form recognised.
         :(BAD)
 
-*       --- PRINT integer literal ---
 KPRTI   OUTPUT = '        la      r0,' NUM
         OUTPUT = '        push    r0'
         OUTPUT = '        la      r0,_putint'
         OUTPUT = '        jal     r1,(r0)'
         OUTPUT = '        add     sp,3'
-*       Emit a trailing newline (FORTRAN list-directed PRINT).
         OUTPUT = '        lc      r0,10'
         OUTPUT = '        push    r0'
         OUTPUT = '        la      r0,_putc'
@@ -186,7 +166,6 @@ KPRTI   OUTPUT = '        la      r0,' NUM
         OUTPUT = '        add     sp,3'
         :(LOOP)
 
-*       --- PRINT variable reference ---
 KPRTV   OUTPUT = '        la      r0,_V_' VN
         OUTPUT = '        lw      r0,0(r0)'
         OUTPUT = '        push    r0'
@@ -200,9 +179,7 @@ KPRTV   OUTPUT = '        la      r0,_V_' VN
         OUTPUT = '        add     sp,3'
         :(LOOP)
 
-*       --- PRINT string literal ---
 KPRTS
-*       Convert LIT to comma-separated decimal byte values in BYTES.
         BYTES = ''
         T = LIT
 B2B     EQ(SIZE(T), 0)                          :S(B2BD)
@@ -218,26 +195,22 @@ ORDNF   BYTES = BYTES '63,'
         T = SUBSTR(T, 2, SIZE(T) - 1)
         :(B2B)
 B2BD    BYTES = BYTES '10,0'
-*       Emit call to _puts on label _S<LITNUM>.
         OUTPUT = '        la      r0,_S' LITNUM
         OUTPUT = '        push    r0'
         OUTPUT = '        la      r0,_puts'
         OUTPUT = '        jal     r1,(r0)'
         OUTPUT = '        add     sp,3'
-*       Accumulate literal in LITDATA pool (emitted at END).
         LITDATA = LITDATA '_S' LITNUM ':' NL
         LITDATA = LITDATA '        .byte   ' BYTES NL
         LITNUM = LITNUM + 1
         :(LOOP)
 
-*       STOP: branch to the function-end epilogue.
+*       STOP -> branch to end epilogue.
 KSTP    OUTPUT = '        lc      r0,0'
         OUTPUT = '        bra     LEND'
         :(LOOP)
 
-*       END: emit epilogue label + epilogue + trailing .data
-*       section with accumulated string-literal pool and INTEGER
-*       variable pool.
+*       END -> epilogue + .data section with both pools.
 KEND    OUTPUT = 'LEND:'
         OUTPUT = '        mov     sp,fp'
         OUTPUT = '        pop     r1'
