@@ -1,52 +1,61 @@
-Implement FTI-0 labels, unconditional GOTO, and conditional
-IF (expr) GOTO — enough to compile examples/goto1.f end-to-end.
+Implement FTI-0 DO/CONTINUE loops — enough to compile
+examples/sum10.f end-to-end.
 
-Demo to unblock (examples/goto1.f):
+Demo to unblock (examples/sum10.f):
 
-    PROGRAM COUNT
+    PROGRAM SUM10
     INTEGER I
-    I = 1
-100 PRINT *, I
-    I = I + 1
-    IF (I - 6) GOTO 100
+    INTEGER S
+    S = 0
+    DO 100 I = 1, 10
+      S = S + I
+100 CONTINUE
+    PRINT *, S
     STOP
     END
 
-Expected output: lines "1", "2", "3", "4", "5".
+Expected output: "55"
 
-What's new in m7:
-- Statement labels (cols 1-5 in source) emit `L<N>:` in the .s
-  right before the labelled statement.
-- KGOT  (kind=GOTO)    -> emit `bra     L<N>`.
-- KIFG  (kind=IF_GOTO) -> parse `IF (<expr>) GOTO <N>`, evaluate
-  expr to r0, emit `ceq r0,z; brf L<N>` (branch when nonzero).
+What's new in m8:
+- KDO  (kind=DO)       parses `DO <lbl> <var> = <start>, <end>`,
+  emits init (store <start> to _V_<var>) and a loop-top label
+  `LDT<n>:`. Records DOLBL, DOVAR, DOEND, DOTOP for the matching
+  CONTINUE.
+- KCNT (kind=CONTINUE) checks if the statement's source label
+  (LBL) matches the saved DOLBL. If yes, emit the increment +
+  bound test + branch-back-to-DOTOP that closes the loop. If no,
+  emit nothing (CONTINUE is then a no-op fall-through).
 
-FTI-0 IF semantics for this saga: `IF (expr) GOTO L` branches
-when expr != 0; falls through when expr == 0. This matches the
-goto1.f loop-exit pattern (`I - 6` is 0 when I=6).
+FORTRAN-II DO semantics implemented:
+- I = start
+- top: body
+- continue-label: I = I + 1; if I <= end, branch to top
+- (body executes at least once when start <= end; standard).
 
-Expression evaluator refactor:
-- KASN and KIFG share the same expression grammar (single
-  binary or single operand). Refactor into a common EXPR block:
-  caller sets MODE ('A' for ASSIGN, 'I' for IF) and the
-  per-mode target (VN for ASSIGN dest, TGT for IF target),
-  jumps to EXPR; EXPR ends with a dispatch on MODE to either
-  store-to-_V_<VN> or ceq/brf-L<TGT>.
+Codegen for the increment+test:
+    la r0,_V_<var>
+    lw r0,0(r0)
+    add r0,1
+    la r1,_V_<var>
+    sw r0,0(r1)
+    la r0,_V_<var>
+    lw r0,0(r0)
+    push r0
+    la r0,<end+1>      ; <end>+1 computed at compile time
+    mov r1,r0
+    pop r0
+    cls r0,r1          ; r0 < r1 (i.e. I < end+1, i.e. I <= end)
+    brt LDT<n>
 
-Constraints:
-- IF arg form: a single binary expr (`V OP T`) or a single
-  operand (`V` / `<lit>`). Same grammar as ASSIGN RHS. Parens,
-  chained ops, relational/logical operators, arithmetic IF
-  (`IF (X) L1, L2, L3`) — all out of scope.
-- GOTO arg must be a positive integer label.
-- Labels in the source: only one label per statement (FORTRAN
-  convention anyway).
-- Cap awareness: emit_asm.sno is at 132 statements post-m6.
-  Refactor + new code stays under ~180.
+Constraints (deferred to later sagas):
+- DO bounds must be integer literals. Variables and expressions
+  in start/end are out of scope.
+- Only one DO at a time (non-nested). Nested DOs come later.
+- Step is always 1 (no `DO ... = a, b, c` step form).
+- Single-line label per CONTINUE.
 
 Steps:
-1. integrate-labels-and-goto -- update LOOP pattern to capture
-   the `label=` field, emit `L<N>:` when present, add KGOT and
-   KIFG dispatches, refactor KASN's expr-eval into a shared EXPR
-   block.
-2. dgmark-and-pr -- dg-mark-pr feat/m7-goto -> pr/m7-goto.
+1. integrate-do-continue -- add KDO and KCNT in emit_asm.sno.
+   Verify sum10.f end-to-end. Regress hello.f / print-int.f /
+   print-var.f / add.f / goto1.f.
+2. dgmark-and-pr -- dg-mark-pr feat/m8-do-loop -> pr/m8-do-loop.
