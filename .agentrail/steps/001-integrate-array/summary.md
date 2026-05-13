@@ -1,0 +1,1 @@
+DIMENSION + array access work end-to-end. array1.f -> '30' (A(3)=3*10). PRINT refactored through EXPR with MODE='P'. New runtime _aindex helper. Discovered: underscored labels (L_FOO) silently fall through in dcsno -- worked around by renaming. All 7 demos pass.
