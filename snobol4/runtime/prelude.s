@@ -52,6 +52,36 @@ L0:
         pop     fp
         jmp     (r1)
 
+; _aindex(base, idx) -- returns base + (idx - 1) * 3 in r0.
+; FORTRAN arrays are 1-indexed and COR24 words are 3 bytes.
+; Args: base @ 12(fp), idx @ 9(fp). Used by the FTI-0 array
+; load/store codegen so emit_asm.sno doesn't have to inline
+; the address math for each array reference.
+
+        .globl  _aindex
+_aindex:
+        push    fp
+        push    r2
+        push    r1
+        mov     fp,sp
+        lw      r0,9(fp)
+        add     r0,-1
+        push    r0
+        la      r0,3
+        mov     r1,r0
+        pop     r0
+        mul     r0,r1
+        push    r0
+        lw      r0,12(fp)
+        mov     r1,r0
+        pop     r0
+        add     r0,r1
+        mov     sp,fp
+        pop     r1
+        pop     r2
+        pop     fp
+        jmp     (r1)
+
         .globl  _puts
 _puts:
         push    fp
