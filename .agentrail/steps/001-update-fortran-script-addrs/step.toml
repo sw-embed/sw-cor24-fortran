@@ -1,0 +1,8 @@
+number = 1
+slug = "update-fortran-script-addrs"
+status = "in-progress"
+description = "Parameterise source/data load addresses in scripts/fortran via SNOBOL4_SRC_AD..."
+role = "production"
+context_files = []
+created_at = "2026-05-14T15:44:40"
+commits = []
