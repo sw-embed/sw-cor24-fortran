@@ -1,1 +1,0 @@
-factorial.f -> 120, fibonacci.f -> 89, fizzbuzz.f -> 1..15 with full FizzBuzz output. Two emit fixes: KINT alpha-digit identifiers; KCNT long-form loop-back branch.

@@ -67,22 +67,31 @@ done
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+# Source and data load addresses. The new dcsno-built snobol4
+# (post-2026-05-14 cap-and-pattern-fixes) wants source at
+# 0xE0000 and data at 0xF0000 (per scripts/run-snobol4.sh in
+# sw-cor24-snobol4). The old snobol4 (pre that PR) used 0x80000
+# and 0x90000. Default to the new convention; override via env
+# for transitional testing against an older interpreter.
+SRC_ADDR="${SNOBOL4_SRC_ADDR:-0xE0000}"
+DAT_ADDR="${SNOBOL4_DAT_ADDR:-0xF0000}"
+
 # Phase 1: normalize -- read fixed-form .f, emit normalized statement
 # records.
-snobol4 --load-binary "$NORMALIZE@0x080000" \
-        --load-binary "$INPUT_F@0x090000" \
+snobol4 --load-binary "$NORMALIZE@$SRC_ADDR" \
+        --load-binary "$INPUT_F@$DAT_ADDR" \
         --entry 0 --quiet --speed 0 -n 100000000 -t 60 \
         > "$WORK/normalized.txt" 2>/dev/null
 
 # Phase 2: classify -- identify statement kinds.
-snobol4 --load-binary "$CLASSIFY@0x080000" \
-        --load-binary "$WORK/normalized.txt@0x090000" \
+snobol4 --load-binary "$CLASSIFY@$SRC_ADDR" \
+        --load-binary "$WORK/normalized.txt@$DAT_ADDR" \
         --entry 0 --quiet --speed 0 -n 100000000 -t 60 \
         > "$WORK/classified.txt" 2>/dev/null
 
 # Phase 3: emit_asm -- emit COR24 assembly.
-snobol4 --load-binary "$EMIT_ASM@0x080000" \
-        --load-binary "$WORK/classified.txt@0x090000" \
+snobol4 --load-binary "$EMIT_ASM@$SRC_ADDR" \
+        --load-binary "$WORK/classified.txt@$DAT_ADDR" \
         --entry 0 --quiet --speed 0 -n 100000000 -t 60 \
         > "$WORK/asm-pre-splice.s" 2>/dev/null
 
