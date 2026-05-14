@@ -1,9 +1,0 @@
-number = 1
-slug = "add-identifier-validation"
-status = "completed"
-description = "Per tools/briefs/dcftn-emit-asm-pattern-anchoring.md option B. Add inline ide..."
-role = "production"
-context_files = []
-created_at = "2026-05-13T17:17:59"
-completed_at = "2026-05-13T19:53:59"
-commits = ["c997f4702816ba845d877284a0f98c65f0207c8e"]
