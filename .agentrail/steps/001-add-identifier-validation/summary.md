@@ -1,0 +1,1 @@
+Identifier validation added per anchoring brief. Malformed input (X = -5, X = + 1) now produces ; WARN: instead of silently compiling. All 7 demos still pass.
