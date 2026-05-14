@@ -1,0 +1,8 @@
+number = 1
+slug = "add-three-classic-demos"
+status = "in-progress"
+description = "Author examples/factorial.f (5! = 120), examples/fibonacci.f (iterative fib(1..."
+role = "production"
+context_files = []
+created_at = "2026-05-13T20:36:53"
+commits = []
