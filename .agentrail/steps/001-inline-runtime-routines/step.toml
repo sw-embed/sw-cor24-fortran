@@ -1,0 +1,8 @@
+number = 1
+slug = "inline-runtime-routines"
+status = "in-progress"
+description = "Inline runtime/prelude.s and runtime/putint.s back into emit_asm.sno as OUTPU..."
+role = "production"
+context_files = []
+created_at = "2026-05-14T15:53:08"
+commits = []

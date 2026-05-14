@@ -1,0 +1,1 @@
+Inline runtime/prelude.s and runtime/putint.s back into emit_asm.sno as OUTPUT statements. Delete runtime files. Strip awk splice from scripts/fortran. Verify all 10 demos compile and run byte-identically.
