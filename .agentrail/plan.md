@@ -1,56 +1,45 @@
-Implement FTI-0 DIMENSION + array access — unblocks
-examples/array1.f end-to-end.
+Per tools/briefs/dcftn-emit-asm-pattern-anchoring.md:
+validate captured VN / SRC / token identifiers in emit_asm.sno so
+that genuinely-malformed input produces `; WARN:` rather than
+bogus assembly labels like `_V_+` or `_V_A(3)`.
 
-Demo to land (examples/array1.f):
+The specific demos the brief cited (goto1.f, sum10.f, array1.f)
+all work end-to-end now (m6 binary expr, m7 GOTO, m8 DO, m9
+array). But the underlying unanchored-pattern issue still bites
+on truly unsupported forms:
 
-    PROGRAM ARR1
-    INTEGER I
-    DIMENSION A(5)
-    DO 100 I = 1, 5
-      A(I) = I * 10
-100 CONTINUE
-    PRINT *, A(3)
-    STOP
-    END
+  X = -5                    (negative literal)
+  X = A + B + C             (chained binary)
+  PRINT *, A(I, J)          (multi-dim index)
 
-Expected output: "30"  (A(3) = 3 * 10).
+Each can match a pattern with bogus captures and produce
+unassemblable `.s`. Brief Option A (POS(0) anchoring) doesn't
+work in dcsno -- tested. Brief Option B (identifier validation
+of captured VN) does work and is what we'll do.
 
-Architecture:
+Approach: after each capture of a name-like field (VN, SRC,
+T1/T2, T1IDX, ARVN, ARIDX), validate it matches the Fortran
+identifier shape by re-SPANning with the alpha-digit class and
+asserting the captured size equals the whole captured size:
 
-- KDIM (kind=DIMENSION_DECL) parses `DIMENSION <name>(<N>)`,
-  reserves N words (3*N bytes) in VARDATA as
-  `_V_<name>:` + `.zero <3*N>`.
+  VN SPAN('A..Z0..9') . M  :F(BAD)
+  EQ(SIZE(M), SIZE(VN))    :F(BAD)
 
-- Array address compute uses a runtime helper `_aindex(base, idx)`
-  that returns `base + (idx - 1) * 3`. Lives in
-  snobol4/runtime/prelude.s alongside _start/_halt/_putc/_puts.
-  Both array read and array store go through it.
+For literal-vs-identifier IDX fields (which can be either an
+integer literal OR a variable name), the dispatch already
+branches on SPAN(digits); the var branch picks up the validation.
 
-- Refactor: EXPR (the shared assign/if expression evaluator)
-  gains an array-ref form `<VAR>(<IDX>)` (EXPRA path) that
-  computes the address via _aindex and dereferences. Same EXPR
-  is now reused for PRINT: routing PRINT *, <expr> through EXPR
-  with MODE='P' (new) emits putint + newline after computing
-  the value. This collapses KPRTI / KPRTV / array-PRINT into
-  one tiny dispatch.
-
-- KASN gains an array-LHS form: `<VAR>(<IDX>) = <expr>`. Parses
-  LHS as an array ref, routes RHS through EXPR with MODE='AA'
-  (new). EXPRDAA stores r0 (the RHS value) into &<VAR>(<IDX>).
-
-Operand types in this saga: integer literal or variable name
-for <IDX>, same as for binary expr operands.
-
-Constraints (out of scope):
-- Multi-dimensional arrays (`DIMENSION A(M, N)`).
-- Array in binary expressions (`X = A(I) + B(J)`).
-- Array as IF inner (`IF (A(I)) GOTO`) -- comes for free via
-  the EXPR refactor but not specifically tested in m9.
-- Bounds checking.
+Constraint: SPAN cannot take a variable class in dcsno -- the
+literal `'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'` must be inlined.
+~2 statements of validation per site. Sites: KASN scalar VN,
+KASNA ARVN+ARIDX, EXPRV SRC, EXPRB T1+T2, EXPRA T1+T1IDX. ~6
+validation sites, ~12 new statements. Source-byte budget:
+~250 bytes free under the dcsno 12,280-byte cap.
 
 Steps:
-1. integrate-array -- add KDIM, EXPRA, EXPRDAA, EXPRDP; refactor
-   KPRT to route through EXPR with MODE='P'; add _aindex to
-   runtime/prelude.s. Verify array1.f end-to-end. Regress all
-   six prior demos.
-2. dgmark-and-pr -- dg-mark-pr feat/m9-array -> pr/m9-array.
+1. add-identifier-validation -- inline the size-equality check
+   at each capture site. Verify the seven existing demos
+   (hello/print-int/print-var/add/goto1/sum10/array1) still
+   compile and run correctly. Add a small fixture file with
+   3-4 malformed lines that each produce `; WARN:`.
+2. dgmark-and-pr.
