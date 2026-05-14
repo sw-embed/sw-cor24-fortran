@@ -1,0 +1,1 @@
+Author examples/factorial.f (5! = 120), examples/fibonacci.f (iterative fib(11) = 89), examples/fizzbuzz.f (1..15 fizzbuzz using counter-reset increments since COR24 has no div/mod). Verify each end-to-end. No emitter changes required.
