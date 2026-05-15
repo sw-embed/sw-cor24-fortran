@@ -1,50 +1,25 @@
-Adapt `scripts/fortran` to dcsno's new load-address convention,
-unblocking the install of the rebuilt `snobol4.{bin,lgo}` from
-sw-cor24-snobol4 main `c675774`+.
+Inline the runtime support routines back into emit_asm.sno;
+delete `snobol4/runtime/*.s` and the awk splice from
+`scripts/fortran`. Now possible because dcsno's
+`pr/cap-and-pattern-fixes` raised the source-byte cap from
+~12,280 to ~64K (verified installed: md5 837b217e).
 
-Per `tools/briefs/dcftn-classify-empty-on-new-snobol4.md`:
-mike's install of the new snobol4 (md5 `837b217e`, the post-
-`pr/cap-and-pattern-fixes` + `pr/more-fixes` build) made all 4
-demos produce 0-byte classify output. The brief hypothesized
-dcftn's .sno code was relying on the old pattern-engine bugs.
+Before m4-print-int, emit_asm.sno emitted the entire .s
+including the boilerplate / runtime. m4 / m9 hit the dcsno
+12K-byte source cap and had to split out the runtime as
+static files (`snobol4/runtime/prelude.s` for
+_start / _halt / _putc / _aindex / _puts, and `runtime/putint.s`
+for _putint), spliced in by an `awk` post-processor in
+`scripts/fortran` at marker lines.
 
-Bisecting today: the .sno code is fine. Tested every phase
-against the new snobol4 with the documented new load addresses
-(`source@0xE0000`, `data@0xF0000`, per dcsno's
-`scripts/run-snobol4.sh`) and every demo passes byte-identical
-to the old-snobol4 output:
-
-  hello/print-int/print-var/add/goto1/sum10/array1/factorial/
-  fibonacci/fizzbuzz -- all 10 pass.
-
-Also verified the dcsno new-fixes work as advertised under the
-new build:
-  OUTPUT = 'x' SIZE('hello') 'y'    -> 'x5y'  (concat-after-funcall fixed)
-  :(L_TEST) ... L_TEST OUTPUT = '..' -> resolves correctly  (underscore label fixed)
-
-Root cause of the install break: `scripts/fortran` hard-coded
-`@0x80000` / `@0x90000` from the old snobol4. Those addresses
-are now empty memory in the new snobol4's layout, so it reads
-garbage and emits nothing.
-
-Fix: parameterise the addresses in scripts/fortran via env
-vars with the new convention as default. Old snobol4 callers
-(if any are still around) can override via `SNOBOL4_SRC_ADDR=`
-and `SNOBOL4_DAT_ADDR=`.
+That workaround is no longer needed. Inlining gets us back to
+"the compiler emits everything", which is the dogfooded form.
 
 Steps:
-1. update-fortran-script-addrs -- parameterise source/data
-   load addresses; default to new convention (`0xE0000` / `0xF0000`).
-   Verify all 10 demos still pass against the rolled-back old
-   snobol4 with the explicit-old-address env vars, and that the
-   pipeline produces the expected output structure against the
-   new snobol4 build.
+1. inline-runtime-routines -- replace the two marker OUTPUTs in
+   emit_asm.sno with the full inline asm-emitting OUTPUT
+   sequences for prelude (~85 lines) and putint (~70 lines).
+   Delete snobol4/runtime/*.s. Simplify scripts/fortran to a
+   plain 3-phase pipeline with no post-processing. Verify all
+   10 demos byte-identical.
 2. dgmark-and-pr.
-
-Follow-on (separate saga): once mike installs the new snobol4
-and updates `work/bin/snobol4`, the dcsno-source-byte-cap fix
-means `emit_asm.sno` can inline the runtime support routines
-(`_start/_halt/_putc/_puts/_putint/_aindex`) directly instead
-of using the marker + awk-splice workaround. That's the actual
-removal of the runtime-splice workaround the user asked about.
-Will land as m13.

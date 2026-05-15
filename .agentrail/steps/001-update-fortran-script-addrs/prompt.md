@@ -1,1 +1,0 @@
-Parameterise source/data load addresses in scripts/fortran via SNOBOL4_SRC_ADDR / SNOBOL4_DAT_ADDR env vars. Default to the new dcsno convention (0xE0000/0xF0000) per scripts/run-snobol4.sh in sw-cor24-snobol4. Verify all 10 demos still pass.

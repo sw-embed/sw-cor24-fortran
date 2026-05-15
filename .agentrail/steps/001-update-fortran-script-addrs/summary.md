@@ -1,1 +1,0 @@
-scripts/fortran updated to load source@0xE0000 / data@0xF0000 by default with env-var override. All 10 demos pass byte-identical under both old snobol4 (with override) and new snobol4 (with default). dcftn .sno code needed no changes; the brief's 'classify emits 0' was just the address mismatch.
