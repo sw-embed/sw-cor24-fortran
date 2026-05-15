@@ -54,10 +54,9 @@ fi
 NORMALIZE="$REPO_DIR/snobol4/src/normalize.sno"
 CLASSIFY="$REPO_DIR/snobol4/src/classify.sno"
 EMIT_ASM="$REPO_DIR/snobol4/src/emit_asm.sno"
-RUNTIME_PRELUDE="$REPO_DIR/snobol4/runtime/prelude.s"
 RUNTIME_PUTINT="$REPO_DIR/snobol4/runtime/putint.s"
 
-for f in "$NORMALIZE" "$CLASSIFY" "$EMIT_ASM" "$RUNTIME_PRELUDE" "$RUNTIME_PUTINT"; do
+for f in "$NORMALIZE" "$CLASSIFY" "$EMIT_ASM" "$RUNTIME_PUTINT"; do
     if [ ! -f "$f" ]; then
         echo "fortran: error: compiler phase or runtime missing: $f" >&2
         exit 1
@@ -95,18 +94,12 @@ snobol4 --load-binary "$EMIT_ASM@$SRC_ADDR" \
         --entry 0 --quiet --speed 0 -n 100000000 -t 60 \
         > "$WORK/asm-pre-splice.s" 2>/dev/null
 
-# Splice runtime _start/_halt/_putc/_puts (RUNTIME_PRELUDE) and
-# _putint (RUNTIME_PUTINT) into the emitted .s at their marker
-# lines. emit_asm.sno can't emit these inline -- their ~120
-# OUTPUTs combined would push the SNOBOL4 program past dcsno's
-# static-program-size limit. See
-# tools/briefs/dcsno-static-program-size-limit.md.
-awk -v prelude="$RUNTIME_PRELUDE" -v putint="$RUNTIME_PUTINT" '
-    /^; __RUNTIME_PRELUDE__$/ {
-        while ((getline line < prelude) > 0) print line
-        close(prelude)
-        next
-    }
+# Splice the _putint runtime subroutine at the marker line.
+# Once the dcsno cap at ~364 SNOBOL4 statements is identified
+# (see tools/briefs/dcsno-emit-asm-halt-near-364-stmts.md) and
+# raised, this last splice goes away and emit_asm.sno emits
+# the full .s with no post-processing.
+awk -v putint="$RUNTIME_PUTINT" '
     /^; __RUNTIME_PUTINT__$/ {
         while ((getline line < putint) > 0) print line
         close(putint)
