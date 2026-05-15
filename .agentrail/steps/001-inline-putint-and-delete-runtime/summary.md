@@ -1,0 +1,1 @@
+_putint inlined; runtime/putint.s deleted; awk splice + RUNTIME_PUTINT check removed from scripts/fortran. runtime/ directory gone. All 10 demos pass byte-identical. emit_asm.sno: 381 stmts, 18,172 bytes -- well under all documented dcsno caps.

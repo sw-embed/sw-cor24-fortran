@@ -1,1 +1,0 @@
-Prelude inlined (_start/_halt/_putc/_aindex/_puts ~ 97 OUTPUTs), runtime/prelude.s deleted, awk splice for prelude removed from scripts/fortran. _putint not yet inlined: bisected and found a still-unknown dcsno cap at 364 stmts / 17460 bytes -- below documented STMAX=1024 and SRC_SIZE=64K caps. Filed dcsno-emit-asm-halt-near-364-stmts.md. All 10 demos pass byte-identical.
