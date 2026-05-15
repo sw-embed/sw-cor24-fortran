@@ -1,0 +1,1 @@
+Inline ~70 _putint OUTPUTs into emit_asm.sno; delete snobol4/runtime/putint.s; drop the awk splice + the marker check in scripts/fortran. Confirm all 10 demos pass byte-identically.

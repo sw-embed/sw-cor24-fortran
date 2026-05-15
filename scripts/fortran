@@ -10,8 +10,9 @@
 #
 #   input.f -> normalize.sno -> classify.sno -> emit_asm.sno -> .s
 #
-# Each phase runs as a separate snobol4 invocation; output of phase N
-# is loaded at 0x090000 for phase N+1.
+# emit_asm.sno emits the full .s including the runtime support
+# routines (_start / _halt / _putc / _aindex / _puts / _putint).
+# No post-processing step.
 #
 # End-to-end pipeline:
 #
@@ -54,11 +55,10 @@ fi
 NORMALIZE="$REPO_DIR/snobol4/src/normalize.sno"
 CLASSIFY="$REPO_DIR/snobol4/src/classify.sno"
 EMIT_ASM="$REPO_DIR/snobol4/src/emit_asm.sno"
-RUNTIME_PUTINT="$REPO_DIR/snobol4/runtime/putint.s"
 
-for f in "$NORMALIZE" "$CLASSIFY" "$EMIT_ASM" "$RUNTIME_PUTINT"; do
+for f in "$NORMALIZE" "$CLASSIFY" "$EMIT_ASM"; do
     if [ ! -f "$f" ]; then
-        echo "fortran: error: compiler phase or runtime missing: $f" >&2
+        echo "fortran: error: compiler phase source missing: $f" >&2
         exit 1
     fi
 done
@@ -66,12 +66,12 @@ done
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-# Source and data load addresses. The new dcsno-built snobol4
+# Source and data load addresses. The dcsno-built snobol4
 # (post-2026-05-14 cap-and-pattern-fixes) wants source at
 # 0xE0000 and data at 0xF0000 (per scripts/run-snobol4.sh in
-# sw-cor24-snobol4). The old snobol4 (pre that PR) used 0x80000
-# and 0x90000. Default to the new convention; override via env
-# for transitional testing against an older interpreter.
+# sw-cor24-snobol4). The pre-PR snobol4 used 0x80000 / 0x90000.
+# Default to the new convention; override via env for
+# transitional testing against an older interpreter.
 SRC_ADDR="${SNOBOL4_SRC_ADDR:-0xE0000}"
 DAT_ADDR="${SNOBOL4_DAT_ADDR:-0xF0000}"
 
@@ -88,22 +88,8 @@ snobol4 --load-binary "$CLASSIFY@$SRC_ADDR" \
         --entry 0 --quiet --speed 0 -n 100000000 -t 60 \
         > "$WORK/classified.txt" 2>/dev/null
 
-# Phase 3: emit_asm -- emit COR24 assembly.
+# Phase 3: emit_asm -- emit the full COR24 assembly.
 snobol4 --load-binary "$EMIT_ASM@$SRC_ADDR" \
         --load-binary "$WORK/classified.txt@$DAT_ADDR" \
         --entry 0 --quiet --speed 0 -n 100000000 -t 60 \
-        > "$WORK/asm-pre-splice.s" 2>/dev/null
-
-# Splice the _putint runtime subroutine at the marker line.
-# Once the dcsno cap at ~364 SNOBOL4 statements is identified
-# (see tools/briefs/dcsno-emit-asm-halt-near-364-stmts.md) and
-# raised, this last splice goes away and emit_asm.sno emits
-# the full .s with no post-processing.
-awk -v putint="$RUNTIME_PUTINT" '
-    /^; __RUNTIME_PUTINT__$/ {
-        while ((getline line < putint) > 0) print line
-        close(putint)
-        next
-    }
-    { print }
-' "$WORK/asm-pre-splice.s"
+        2>/dev/null
